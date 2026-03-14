@@ -1,68 +1,48 @@
 """
-Admin Routes — View all student submissions and proctoring data
+Admin Routes — View all student submissions
 """
-from fastapi import APIRouter, Depends, HTTPException
-from .auth import verify_token
+from fastapi import APIRouter
 from ..database import get_db
-import uuid
-from datetime import datetime
+import time
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-# In-memory fallback submissions (used when MongoDB is unavailable)
-_MOCK_SUBMISSIONS = [
+# Fallback in-memory demo data when MongoDB is unavailable
+_demo_submissions = [
     {
-        "submission_id": str(uuid.uuid4()),
-        "student_email": "student@mindmesh.ai",
+        "submission_id": "demo_001",
         "student_name": "Demo Student",
-        "score": 73,
-        "correct": 11,
+        "student_email": "student@mindmesh.ai",
+        "score": 7,
+        "correct": 1,
         "questions_total": 15,
-        "questions_answered": 14,
-        "time_used": 342,
-        "category_scores": {
-            "CS Fundamentals": {"total": 5, "correct": 4},
-            "AI & ML": {"total": 5, "correct": 3},
-            "Networking": {"total": 5, "correct": 4},
-        },
+        "questions_answered": 15,
+        "time_used": 245,
+        "category_scores": {"CS Fundamentals": 20, "AI & ML": 0, "Networking": 0},
         "proctoring_summary": {
-            "total_violations": 3,
-            "violation_types": ["no_face", "object:cell phone"],
+            "total_violations": 4,
+            "violation_types": ["tab_switch", "no_face"],
+            "tab_switches": 2,
             "risk_level": "Medium",
-            "snapshots_analyzed": 24,
         },
-        "submitted_at": datetime(2026, 3, 14, 17, 30).isoformat(),
-    },
+        "submitted_at": int(time.time() * 1000),
+    }
 ]
 
 
-def _require_admin(payload: dict = Depends(verify_token)):
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return payload
-
-
 @router.get("/submissions")
-async def get_all_submissions(payload: dict = Depends(_require_admin)):
-    """Return all student exam submissions."""
+async def get_submissions():
     db = get_db()
-    if db is not None:
-        cursor = db.submissions.find({}, {"_id": 0}).sort("submitted_at", -1).limit(100)
-        results = await cursor.to_list(100)
-        return results if results else _MOCK_SUBMISSIONS
-    return _MOCK_SUBMISSIONS
+    if db is None:
+        return _demo_submissions
+    docs = await db.submissions.find({}, {"_id": 0}).sort("submitted_at", -1).to_list(100)
+    return docs if docs else _demo_submissions
 
 
 @router.get("/submissions/{submission_id}")
-async def get_submission(submission_id: str, payload: dict = Depends(_require_admin)):
-    """Return a single submission's full proctoring detail."""
+async def get_submission(submission_id: str):
     db = get_db()
-    if db is not None:
-        doc = await db.submissions.find_one({"submission_id": submission_id}, {"_id": 0})
-        if doc:
-            return doc
-    # Try mock
-    for s in _MOCK_SUBMISSIONS:
-        if s["submission_id"] == submission_id:
-            return s
-    raise HTTPException(status_code=404, detail="Submission not found")
+    if db is None:
+        return _demo_submissions[0]
+    doc = await db.submissions.find_one({"submission_id": submission_id}, {"_id": 0})
+    return doc or _demo_submissions[0]

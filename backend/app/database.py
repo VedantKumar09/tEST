@@ -1,29 +1,24 @@
-from motor.motor_asyncio import AsyncIOMotorClient
+# MindMesh v2 — Database Connection (MongoDB via Motor)
+import motor.motor_asyncio
 from .config import settings
 
-client = None
-db = None
-
+_client = None
+_db = None
 
 async def connect_db():
-    global client, db
+    global _client, _db
     try:
-        client = AsyncIOMotorClient(settings.MONGODB_URI, serverSelectionTimeoutMS=3000)
-        await client.admin.command("ping")
-        db = client[settings.DATABASE_NAME]
+        _client = motor.motor_asyncio.AsyncIOMotorClient(settings.MONGODB_URL)
+        _db = _client[settings.DATABASE_NAME]
         print(f"[DB] Connected to MongoDB: {settings.DATABASE_NAME}")
     except Exception as e:
-        print(f"[DB] MongoDB unavailable, running without DB: {e}")
-        client = None
-        db = None
-
+        print(f"[DB] MongoDB connection failed: {e}. Running without DB.")
+        _db = None
 
 async def close_db():
-    global client
-    if client:
-        client.close()
-        print("[DB] MongoDB connection closed")
-
+    global _client
+    if _client:
+        _client.close()
 
 def get_db():
-    return db
+    return _db

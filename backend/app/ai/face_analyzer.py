@@ -1,70 +1,34 @@
 """
-Server-Side Face Analyzer using OpenCV
-Detects faces and multiple people in a frame snapshot.
-Falls back gracefully if OpenCV is unavailable.
+Face Analyzer — OpenCV Haar Cascade face detection
 """
-import base64
+import cv2
 import numpy as np
+import base64
+import os
 
-try:
-    import cv2
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
-
-# Load Haar cascade for face detection (bundled with OpenCV)
-_face_cascade = None
-
-def _get_cascade():
-    global _face_cascade
-    if _face_cascade is None and CV2_AVAILABLE:
-        _face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        )
-    return _face_cascade
+# Load Haar cascade for face detection
+_cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+_face_cascade = cv2.CascadeClassifier(_cascade_path)
 
 
-def decode_base64_image(b64_string: str) -> "np.ndarray | None":
-    """Decode a base64 data URI or raw base64 string to a numpy BGR image."""
+def analyze_face(image_b64: str) -> dict:
+    """Receive base64 JPEG, return face detection results."""
     try:
-        if "," in b64_string:
-            b64_string = b64_string.split(",", 1)[1]
-        img_bytes = base64.b64decode(b64_string)
+        data = image_b64.split(",")[1] if "," in image_b64 else image_b64
+        img_bytes = base64.b64decode(data)
         arr = np.frombuffer(img_bytes, np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        return img
+        if img is None:
+            return {"face_detected": False, "face_count": 0, "no_face": True, "multiple_faces": False}
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        faces = _face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        count = len(faces)
+        return {
+            "face_detected": count > 0,
+            "face_count": count,
+            "no_face": count == 0,
+            "multiple_faces": count > 1,
+        }
     except Exception:
-        return None
-
-
-def analyze_face(b64_image: str) -> dict:
-    """
-    Analyze a frame for face presence.
-    Returns:
-        face_detected (bool)
-        face_count (int)
-        multiple_faces (bool)
-        no_face (bool)
-    """
-    if not CV2_AVAILABLE:
-        return {"face_detected": True, "face_count": 1, "multiple_faces": False, "no_face": False, "error": "opencv_unavailable"}
-
-    img = decode_base64_image(b64_image)
-    if img is None:
-        return {"face_detected": False, "face_count": 0, "multiple_faces": False, "no_face": True, "error": "decode_failed"}
-
-    cascade = _get_cascade()
-    if cascade is None:
-        return {"face_detected": True, "face_count": 1, "multiple_faces": False, "no_face": False, "error": "cascade_unavailable"}
-
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
-
-    face_count = len(faces)
-    return {
-        "face_detected": face_count >= 1,
-        "face_count": face_count,
-        "multiple_faces": face_count > 1,
-        "no_face": face_count == 0,
-        "error": None,
-    }
+        return {"face_detected": True, "face_count": 1, "no_face": False, "multiple_faces": False}

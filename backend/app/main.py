@@ -7,8 +7,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from .database import connect_db, close_db
 from .routes import auth, exam, proctoring, admin
 
-# ── WebSocket relay state (inline to avoid include_router WS issues) ──────────
-# Active connections: student_id -> {"phone": ws, "viewer": ws}
+# WebSocket relay state: student_id -> {"phone": ws, "viewer": ws}
 _ws_connections: dict[str, dict] = {}
 
 
@@ -21,26 +20,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="MindMesh v2 API",
-    description="AI Assessment & Proctoring Platform — Simplified Backend",
+    description="AI Assessment & Proctoring Platform",
     version="2.0.0",
     lifespan=lifespan,
 )
 
-# NOTE: No CORSMiddleware — all browser requests go through the Vite proxy.
-# CORSMiddleware caused HTTP 403 on WebSocket upgrade requests.
-
-# ── HTTP Routers ───────────────────────────────────────────────────────────────
+# HTTP Routers
 app.include_router(auth.router)
 app.include_router(exam.router)
 app.include_router(proctoring.router)
 app.include_router(admin.router)
 
 
-# ── WebSocket Relay: Phone → PC viewer ────────────────────────────────────────
+# ── WebSocket Relay: Phone → PC viewer (30 FPS) ───────────────────────────────
 
 @app.websocket("/ws/phone/{student_id}")
 async def phone_camera_ws(websocket: WebSocket, student_id: str):
-    """Phone connects here and pushes JPEG frames. Backend relays to PC viewer."""
+    """Phone streams JPEG frames here; backend relays to PC viewer."""
     await websocket.accept()
     if student_id not in _ws_connections:
         _ws_connections[student_id] = {}
@@ -60,21 +56,20 @@ async def phone_camera_ws(websocket: WebSocket, student_id: str):
 
 @app.websocket("/ws/viewer/{student_id}")
 async def viewer_ws(websocket: WebSocket, student_id: str):
-    """PC exam page connects here to receive relayed phone frames."""
+    """PC exam page receives relayed phone frames here."""
     await websocket.accept()
     if student_id not in _ws_connections:
         _ws_connections[student_id] = {}
     _ws_connections[student_id]["viewer"] = websocket
     try:
         while True:
-            await websocket.receive_text()  # keep alive
+            await websocket.receive_text()
     except WebSocketDisconnect:
         _ws_connections.get(student_id, {}).pop("viewer", None)
 
 
 @app.get("/ws/status/{student_id}")
 async def ws_status(student_id: str):
-    """Check if phone WS is connected."""
     connected = student_id in _ws_connections and "phone" in _ws_connections[student_id]
     return {"connected": connected}
 

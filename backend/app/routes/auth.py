@@ -1,87 +1,59 @@
 """
-Auth Routes — Login with JWT, student & admin roles
+Auth Routes — Login with JWT, demo users
 """
-from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
+from jose import jwt
+from datetime import datetime, timedelta
 from ..config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-security = HTTPBearer()
 
-# ── Demo users ────────────────────────────────────────────────────────────────
+# Demo users (replace with real DB in production)
 DEMO_USERS = {
     "student@mindmesh.ai": {
-        "email": "student@mindmesh.ai",
         "password": "student123",
-        "name": "Demo Student",
         "role": "student",
+        "name": "Demo Student",
+        "id": "student_001",
     },
     "admin@mindmesh.ai": {
-        "email": "admin@mindmesh.ai",
         "password": "admin123",
-        "name": "Admin User",
         "role": "admin",
+        "name": "Admin User",
+        "id": "admin_001",
     },
 }
 
 
-# ── Pydantic schemas ──────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
     email: str
     password: str
-    role: str  # "student" | "admin"
-
-
-class UserOut(BaseModel):
-    email: str
-    name: str
     role: str
 
 
-class TokenOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user: UserOut
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 def create_token(data: dict) -> str:
     payload = data.copy()
-    payload["exp"] = datetime.utcnow() + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
-    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    payload["exp"] = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    try:
-        return jwt.decode(
-            credentials.credentials,
-            settings.JWT_SECRET,
-            algorithms=[settings.JWT_ALGORITHM],
-        )
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-@router.post("/login", response_model=TokenOut)
+@router.post("/login")
 async def login(body: LoginRequest):
-    user = DEMO_USERS.get(body.email.lower())
+    user = DEMO_USERS.get(body.email)
     if not user or user["password"] != body.password:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if user["role"] != body.role:
-        raise HTTPException(status_code=401, detail=f"Account is not a {body.role}")
+        raise HTTPException(status_code=403, detail=f"Account is not a {body.role}")
 
-    token = create_token({"sub": user["email"], "name": user["name"], "role": user["role"]})
-    return TokenOut(
-        access_token=token,
-        user=UserOut(email=user["email"], name=user["name"], role=user["role"]),
-    )
+    token = create_token({"sub": body.email, "role": user["role"], "name": user["name"]})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {"email": body.email, "name": user["name"], "role": user["role"]},
+    }
 
 
-@router.get("/me", response_model=UserOut)
-async def me(payload: dict = Depends(verify_token)):
-    return UserOut(email=payload["sub"], name=payload["name"], role=payload["role"])
+@router.get("/me")
+async def me():
+    return {"message": "Token valid"}
