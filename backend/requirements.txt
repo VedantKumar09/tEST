@@ -1,0 +1,10 @@
+fastapi==0.100.1
+uvicorn[standard]==0.23.2
+motor==3.5.0
+pymongo==4.8.0
+python-jose[cryptography]==3.3.0
+pydantic==1.10.21
+python-dotenv==1.0.1
+python-multipart==0.0.6
+opencv-python-headless
+numpy
