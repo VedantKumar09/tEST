@@ -2,10 +2,10 @@ fastapi==0.135.1
 uvicorn[standard]==0.41.0
 pydantic==2.12.5
 pydantic-settings==2.13.1
-motor
-pymongo
-python-jose[cryptography]
-python-dotenv
-python-multipart
-opencv-python-headless
-numpy
+motor==3.7.1
+pymongo==4.16.0
+python-jose[cryptography]==3.5.0
+python-dotenv==1.2.2
+python-multipart==0.0.22
+opencv-python-headless==4.13.0.92
+numpy==2.4.3
