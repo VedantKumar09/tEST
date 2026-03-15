@@ -32,8 +32,10 @@ echo.
 echo   PC       ^> https://localhost:5173
 echo   Backend  ^> http://localhost:8000
 echo.
+:: Auto-detect LAN IP
+for /f "tokens=*" %%i in ('powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'Loopback' -and $_.IPAddress -ne '127.0.0.1' } | Select-Object -First 1).IPAddress"') do set LAN_IP=%%i
 echo   PHONE (same Wi-Fi):
-echo   https://192.168.105.154:5173
+echo   https://%LAN_IP%:5173
 echo   Accept cert warning ^> tap Allow Camera
 echo ========================================
 pause

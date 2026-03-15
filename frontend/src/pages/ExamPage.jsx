@@ -87,10 +87,27 @@ export default function ExamPage() {
   // ── Build second camera URL ─────────────────────────────────────────────────
   useEffect(() => {
     const sid = encodeURIComponent(user?.email || 'anonymous');
-    // Always use LAN IP + HTTPS so the phone can reach this PC and camera API works
-    // window.location.origin returns 'https://localhost:5173' on the PC — useless for a phone
-    const lanBase = 'https://192.168.105.154:5173';
-    setSecondCamUrl(`${lanBase}/qr-camera?sid=${sid}`);
+    // Dynamically detect the PC's LAN IP so the QR code works on any network.
+    // If the page is accessed via a LAN IP (e.g. phone already on LAN), use that.
+    // If via localhost, fetch the LAN IP from a small backend endpoint.
+    const buildUrl = async () => {
+      let host = window.location.hostname;
+      const port = window.location.port || '5173';
+
+      if (host === 'localhost' || host === '127.0.0.1') {
+        try {
+          const res = await fetch('/api/network/lan-ip');
+          const data = await res.json();
+          if (data.ip) host = data.ip;
+        } catch {
+          // fallback: keep localhost (won't work on phone, but won't crash)
+        }
+      }
+
+      const lanBase = `https://${host}:${port}`;
+      setSecondCamUrl(`${lanBase}/qr-camera?sid=${sid}`);
+    };
+    buildUrl();
   }, [user]);
 
   // ── Primary camera init ─────────────────────────────────────────────────────

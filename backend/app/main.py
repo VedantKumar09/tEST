@@ -74,6 +74,22 @@ async def ws_status(student_id: str):
     return {"connected": connected}
 
 
+@app.get("/api/network/lan-ip")
+async def lan_ip():
+    """Return this PC's LAN IP so the frontend can build a QR URL dynamically."""
+    import socket
+    try:
+        # Connect to a public DNS to determine the outbound LAN IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        ip = "127.0.0.1"
+    return {"ip": ip}
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "service": "MindMesh v2", "version": "2.0.0"}

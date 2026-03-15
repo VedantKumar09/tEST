@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Use relative URLs — Vite proxy forwards /api/* to http://localhost:8000
-// This works for both PC (https://localhost:5173) and phone (https://192.168.105.154:5173)
+// This works for both PC (https://localhost:5173) and phone (https://<LAN-IP>:5173)
 // Avoids mixed-content block: phone is HTTPS, backend is HTTP
 const api = axios.create({ baseURL: '/' });
 
