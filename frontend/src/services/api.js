@@ -29,6 +29,12 @@ export const examAPI = {
 export const proctoringAPI = {
   analyzeFrame: (image, student_id) =>
     api.post('/api/proctor/analyze', { image, student_id }).then(r => r.data),
+  sendBrowserEvent: (student_id, event_type) =>
+    api.post('/api/proctor/browser-event', { student_id, event_type }).then(r => r.data),
+  getProctorScore: (student_id) =>
+    api.get(`/api/proctor/score/${student_id}`).then(r => r.data),
+  getProctorLogs: (student_id) =>
+    api.get(`/api/proctor/logs/${student_id}`).then(r => r.data),
   sendSecondFrame: (image, student_id) =>
     api.post('/api/proctor/second-frame', { image, student_id }).then(r => r.data),
   getSecondCamFrame: (student_id) =>
@@ -39,4 +45,5 @@ export const proctoringAPI = {
 export const adminAPI = {
   getSubmissions: () => api.get('/api/admin/submissions').then(r => r.data),
   getSubmission: (id) => api.get(`/api/admin/submissions/${id}`).then(r => r.data),
+  getProctorLogs: () => api.get('/api/admin/proctor-logs').then(r => r.data),
 };

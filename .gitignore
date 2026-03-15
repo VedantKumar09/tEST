@@ -36,3 +36,8 @@ Thumbs.db
 # Local Database Data
 data/
 data/db/
+
+# Proctoring evidence & AI model weights
+proctor_logs/
+*.pt
+*.task

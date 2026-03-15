@@ -46,3 +46,15 @@ async def get_submission(submission_id: str):
         return _demo_submissions[0]
     doc = await db.submissions.find_one({"submission_id": submission_id}, {"_id": 0})
     return doc or _demo_submissions[0]
+
+
+@router.get("/proctor-logs")
+async def get_all_proctor_logs():
+    """Return aggregated proctoring violation events across all students."""
+    db = get_db()
+    if db is None:
+        return []
+    docs = await db.violation_events.find(
+        {}, {"_id": 0}
+    ).sort("timestamp", -1).to_list(500)
+    return docs

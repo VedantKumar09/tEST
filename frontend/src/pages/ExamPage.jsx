@@ -1,10 +1,16 @@
 /**
  * Exam Page — Main exam interface
- * Left: Primary webcam (server-side AI analysis every 3s) + Secondary phone cam feed
+ * Left: Primary webcam (server-side AI analysis every 2s) + Secondary phone cam feed
  * Right: MCQ questions + timer
  * Setup flow: Camera → Identity → QR Cam → Exam
+ *
+ * Enhanced proctoring:
+ *  - Real-time warning overlays (no face, looking away, multiple people, objects)
+ *  - Cumulative risk score + risk level from backend scoring engine
+ *  - Head pose + eye gaze attention indicators
+ *  - Browser monitoring (tab switch, fullscreen exit, copy/paste, right click)
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
@@ -29,6 +35,7 @@ const FALLBACK_QUESTIONS = [
 ];
 
 const EXAM_DURATION = 600; // 10 minutes
+const ANALYSIS_INTERVAL_MS = 700; // send frame every 700ms for near-real-time detection
 
 export default function ExamPage() {
   const { user, logout } = useAuth();
@@ -67,9 +74,18 @@ export default function ExamPage() {
   const [examTerminated, setExamTerminated] = useState(false);
   const violationTypesRef = useRef([]);
 
+  // ── Enhanced proctoring state ───────────────────────────────────────────────
+  const [warningBanners, setWarningBanners] = useState([]); // active warning messages
+  const [riskScore, setRiskScore] = useState(0);
+  const [riskLevel, setRiskLevel] = useState('Safe');
+  const [headPose, setHeadPose] = useState({ yaw: 0, pitch: 0, looking_away: false });
+  const [eyeGaze, setEyeGaze] = useState({ direction: 'center', looking_offscreen: false });
+  const [attentionStatus, setAttentionStatus] = useState('Focused'); // Focused | Distracted | Away
+
   const timerRef = useRef(null);
   const analysisRef = useRef(null);
   const viewerWsRef = useRef(null);
+  const warningTimeoutRef = useRef(null);
 
   const logEvent = (type, msg) => {
     const now = new Date();
@@ -87,23 +103,16 @@ export default function ExamPage() {
   // ── Build second camera URL ─────────────────────────────────────────────────
   useEffect(() => {
     const sid = encodeURIComponent(user?.email || 'anonymous');
-    // Dynamically detect the PC's LAN IP so the QR code works on any network.
-    // If the page is accessed via a LAN IP (e.g. phone already on LAN), use that.
-    // If via localhost, fetch the LAN IP from a small backend endpoint.
     const buildUrl = async () => {
       let host = window.location.hostname;
       const port = window.location.port || '5173';
-
       if (host === 'localhost' || host === '127.0.0.1') {
         try {
           const res = await fetch('/api/network/lan-ip');
           const data = await res.json();
           if (data.ip) host = data.ip;
-        } catch {
-          // fallback: keep localhost (won't work on phone, but won't crash)
-        }
+        } catch { /* keep localhost */ }
       }
-
       const lanBase = `https://${host}:${port}`;
       setSecondCamUrl(`${lanBase}/qr-camera?sid=${sid}`);
     };
@@ -121,7 +130,7 @@ export default function ExamPage() {
       setCameraOn(true);
       setStep('identity');
     } catch {
-      setStep('identity'); // proceed even if camera fails
+      setStep('identity');
     }
   };
 
@@ -161,7 +170,38 @@ export default function ExamPage() {
     return () => clearInterval(timerRef.current);
   }, [examStarted, examSubmitted]);
 
-  // ── Tab detection ───────────────────────────────────────────────────────────
+  // ── Warning banner helper ───────────────────────────────────────────────────
+  const showWarningBanner = useCallback((msg) => {
+    setWarningBanners(prev => {
+      if (prev.includes(msg)) return prev;
+      return [...prev, msg];
+    });
+    // Auto-clear after 4 seconds
+    setTimeout(() => {
+      setWarningBanners(prev => prev.filter(m => m !== msg));
+    }, 4000);
+  }, []);
+
+  // ── Compute attention status from head pose + eye gaze ──────────────────────
+  const computeAttention = useCallback((hp, eg) => {
+    if (hp.looking_away && eg.looking_offscreen) return 'Away';
+    if (hp.looking_away || eg.looking_offscreen) return 'Distracted';
+    return 'Focused';
+  }, []);
+
+  // ── Send browser events to backend ──────────────────────────────────────────
+  const sendBrowserEvent = useCallback(async (eventType) => {
+    if (!user?.email) return;
+    try {
+      const res = await proctoringAPI.sendBrowserEvent(user.email, eventType);
+      if (res.score) {
+        setRiskScore(res.score.cumulative_score || 0);
+        setRiskLevel(res.score.risk_level || 'Safe');
+      }
+    } catch { /* ignore */ }
+  }, [user]);
+
+  // ── Tab / visibility detection ──────────────────────────────────────────────
   useEffect(() => {
     if (!examStarted) return;
     const onVisibility = () => {
@@ -169,16 +209,65 @@ export default function ExamPage() {
         setTabSwitches(prev => prev + 1);
         addViolation('tab_switch');
         logEvent('danger', 'Tab switch detected!');
+        showWarningBanner('⚠ Tab switch detected — stay on exam page');
+        sendBrowserEvent('tab_switch');
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [examStarted]);
+  }, [examStarted, sendBrowserEvent, showWarningBanner]);
 
-  // ── Server-side AI analysis every 3 seconds ─────────────────────────────────
+  // ── Fullscreen exit detection ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!examStarted) return;
+    const onFullscreen = () => {
+      if (!document.fullscreenElement) {
+        addViolation('fullscreen_exit');
+        logEvent('warning', 'Fullscreen exited');
+        sendBrowserEvent('fullscreen_exit');
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreen);
+    return () => document.removeEventListener('fullscreenchange', onFullscreen);
+  }, [examStarted, sendBrowserEvent]);
+
+  // ── Copy / Paste detection ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!examStarted) return;
+    const onCopy = (e) => {
+      e.preventDefault();
+      addViolation('copy_paste');
+      logEvent('danger', 'Copy/paste detected!');
+      showWarningBanner('⚠ Copy/paste is not allowed');
+      sendBrowserEvent('copy_paste');
+    };
+    document.addEventListener('copy', onCopy);
+    document.addEventListener('paste', onCopy);
+    document.addEventListener('cut', onCopy);
+    return () => {
+      document.removeEventListener('copy', onCopy);
+      document.removeEventListener('paste', onCopy);
+      document.removeEventListener('cut', onCopy);
+    };
+  }, [examStarted, sendBrowserEvent, showWarningBanner]);
+
+  // ── Right-click detection ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!examStarted) return;
+    const onRightClick = (e) => {
+      e.preventDefault();
+      addViolation('right_click');
+      logEvent('warning', 'Right-click detected');
+      sendBrowserEvent('right_click');
+    };
+    document.addEventListener('contextmenu', onRightClick);
+    return () => document.removeEventListener('contextmenu', onRightClick);
+  }, [examStarted, sendBrowserEvent]);
+
+  // ── Server-side AI analysis every 2 seconds ─────────────────────────────────
   useEffect(() => {
     if (!examStarted || examSubmitted) return;
-    analysisRef.current = setInterval(() => analyzeFrame(), 3000);
+    analysisRef.current = setInterval(() => analyzeFrame(), ANALYSIS_INTERVAL_MS);
     return () => clearInterval(analysisRef.current);
   }, [examStarted, examSubmitted]);
 
@@ -195,16 +284,50 @@ export default function ExamPage() {
     if (!frame || !user?.email) return;
     try {
       const res = await proctoringAPI.analyzeFrame(frame, user.email);
+
+      // Face detection
       setFaceDetected(res.face_detected);
-      if (res.no_face) { addViolation('no_face'); logEvent('danger', 'No face detected!'); }
-      if (res.multiple_faces) { addViolation('multiple_faces'); logEvent('danger', 'Multiple faces detected!'); }
+
+      // Head pose + eye gaze
+      if (res.head_pose) setHeadPose(res.head_pose);
+      if (res.eye_gaze) setEyeGaze(res.eye_gaze);
+      if (res.head_pose && res.eye_gaze) {
+        setAttentionStatus(computeAttention(res.head_pose, res.eye_gaze));
+      }
+
+      // Risk score from backend
+      if (res.score) {
+        setRiskScore(res.score.cumulative_score || 0);
+        setRiskLevel(res.score.risk_level || 'Safe');
+      }
+
+      // Warning banners + violation logging
+      if (res.no_face) {
+        addViolation('no_face');
+        logEvent('danger', 'No face detected!');
+        showWarningBanner('⚠ Face not detected');
+      }
+      if (res.multiple_faces) {
+        addViolation('multiple_faces');
+        logEvent('danger', 'Multiple faces detected!');
+        showWarningBanner('⚠ Multiple people detected');
+      }
+      if (res.head_pose?.looking_away) {
+        addViolation('looking_away');
+        logEvent('warning', 'Looking away from screen');
+        showWarningBanner('⚠ Please look at the screen');
+      }
+      if (res.eye_gaze?.looking_offscreen) {
+        logEvent('warning', `Gaze off-screen: ${res.eye_gaze.direction}`);
+      }
       if (res.suspicious_found) {
         res.objects_detected.forEach(obj => {
           addViolation(`object:${obj.class}`);
-          logEvent('warning', `Suspicious object: ${obj.class}`);
+          logEvent('danger', `Suspicious object: ${obj.class} (${Math.round(obj.confidence * 100)}%)`);
+          showWarningBanner(`⚠ Suspicious object detected: ${obj.class}`);
         });
       }
-    } catch {}
+    } catch { /* ignore network errors */ }
   };
 
   // ── WebSocket receiver for secondary camera (30 FPS) ────────────────────────
@@ -222,10 +345,8 @@ export default function ExamPage() {
       };
       ws.onclose = () => {
         setSecondCamConnected(false);
-        // Reconnect after brief delay if exam still running
         setTimeout(() => { if (examStarted && !examSubmitted) connect(); }, 2000);
       };
-      // Send periodic pings to keep connection alive
       const ping = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 10000);
       ws.addEventListener('close', () => clearInterval(ping));
       viewerWsRef.current = ws;
@@ -260,7 +381,8 @@ export default function ExamPage() {
       total_violations: violations,
       violation_types: [...new Set(violationTypesRef.current)],
       tab_switches: tabSwitches,
-      risk_level: violations >= 5 ? 'High' : violations >= 2 ? 'Medium' : 'Low',
+      risk_level: riskLevel,
+      risk_score: riskScore,
     };
 
     try {
@@ -272,7 +394,6 @@ export default function ExamPage() {
       result.proctoring_summary = procData;
       localStorage.setItem('mm_exam_result', JSON.stringify(result));
     } catch {
-      // Calculate locally
       const correct = answers.filter((a, i) => a !== -1 && questions[i] && a === (FALLBACK_QUESTIONS[i]?.correct ?? -99)).length;
       const localResult = {
         score: Math.round((correct / questions.length) * 100),
@@ -292,6 +413,12 @@ export default function ExamPage() {
   const timerColor = timeLeft <= 60 ? 'var(--danger)' : timeLeft <= 180 ? 'var(--warning)' : 'var(--accent)';
   const letters = ['A', 'B', 'C', 'D'];
   const q = questions[currentQ];
+
+  // Risk level colour
+  const riskColor = riskLevel === 'Cheating' ? 'var(--danger)' : riskLevel === 'High Risk' ? '#ff6b35' : riskLevel === 'Suspicious' ? 'var(--warning)' : 'var(--success)';
+  // Attention colour
+  const attColor = attentionStatus === 'Away' ? 'var(--danger)' : attentionStatus === 'Distracted' ? 'var(--warning)' : 'var(--success)';
+  const attIcon = attentionStatus === 'Focused' ? '🎯' : attentionStatus === 'Distracted' ? '👀' : '🚫';
 
   // ──────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -432,12 +559,52 @@ export default function ExamPage() {
           {/* ── LEFT: Proctoring Panel ── */}
           <aside className="proctor-panel">
             {/* Primary webcam */}
-            <div>
+            <div style={{ position: 'relative' }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>Primary Camera</p>
               <div className="cam-box" style={{ borderColor: cameraOn ? 'var(--success)' : 'var(--border)' }}>
                 <video ref={setPrimaryVideoRef} autoPlay playsInline muted />
                 <span className="cam-label">🎥 Primary</span>
                 <span className={`cam-status-dot ${cameraOn ? 'active' : ''}`} />
+
+                {/* ── Debug overlay — head pose & gaze ── */}
+                {examStarted && (
+                  <div style={{
+                    position: 'absolute', top: 4, left: 4,
+                    background: 'rgba(0,0,0,0.7)', color: '#0f0',
+                    fontFamily: 'monospace', fontSize: 10, padding: '4px 7px',
+                    borderRadius: 4, zIndex: 11, lineHeight: 1.5,
+                    pointerEvents: 'none',
+                  }}>
+                    <div>Yaw: {headPose.yaw ?? 0}° | Pitch: {headPose.pitch ?? 0}°</div>
+                    <div>Away: {headPose.looking_away ? '🔴 YES' : '🟢 NO'}</div>
+                    <div>Gaze: {eyeGaze.direction ?? '—'} ({eyeGaze.ratio ?? '-'})</div>
+                    <div>Attention: {attentionStatus}</div>
+                  </div>
+                )}
+
+                {/* ── Real-time warning banners over camera ── */}
+                {warningBanners.length > 0 && (
+                  <div style={{
+                    position: 'absolute', bottom: 28, left: 4, right: 4,
+                    display: 'flex', flexDirection: 'column', gap: 4, zIndex: 10,
+                  }}>
+                    {warningBanners.map((msg, i) => (
+                      <div key={i} style={{
+                        background: 'rgba(239, 68, 68, 0.92)',
+                        color: '#fff',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        textAlign: 'center',
+                        backdropFilter: 'blur(4px)',
+                        animation: 'fadeIn 0.3s ease',
+                      }}>
+                        {msg}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -459,13 +626,14 @@ export default function ExamPage() {
               </div>
             </div>
 
-            {/* Stats */}
+            {/* Stats — enhanced with risk score + attention */}
             <div className="proctor-stats">
               {[
                 { val: violations, lbl: 'Violations', color: violations > 5 ? 'var(--danger)' : violations > 0 ? 'var(--warning)' : 'var(--success)' },
                 { val: tabSwitches, lbl: 'Tab Switches', color: tabSwitches > 0 ? 'var(--warning)' : 'var(--success)' },
                 { val: faceDetected ? '✅' : '❌', lbl: 'Face', color: faceDetected ? 'var(--success)' : 'var(--danger)' },
-                { val: violations >= 5 ? 'High' : violations >= 2 ? 'Med' : 'Low', lbl: 'Risk', color: violations >= 5 ? 'var(--danger)' : violations >= 2 ? 'var(--warning)' : 'var(--success)' },
+                { val: riskLevel, lbl: `Risk (${riskScore})`, color: riskColor },
+                { val: `${attIcon}`, lbl: attentionStatus, color: attColor },
               ].map(({ val, lbl, color }) => (
                 <div key={lbl} className="glass-card stat-card">
                   <div className="stat-val" style={{ color }}>{val}</div>
