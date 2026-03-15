@@ -2,7 +2,7 @@
 
 MindMesh v2 is an AI-Powered Assessment & Proctoring Platform. It uses a **FastAPI** backend, a **Vite + React** frontend, and **MongoDB** for its database. 
 
-This guide will walk you through setting up and running the project completely locally on Linux.
+This guide will walk you through setting up and running the project completely locally on Windows.
 
 ---
 
@@ -21,36 +21,36 @@ Before you start, make sure you have the following installed on your system:
 MongoDB must be running on `localhost:27017` before starting the backend.
 Instead of running it as a background system service, you can run it locally within the project folder for development:
 
-```bash
+```powershell
 # Create a local database directory
-mkdir -p data/db
+New-Item -ItemType Directory -Force -Path data\db
 
 # Run MongoDB in the background pointing to this local directory
-mongod --dbpath "$PWD/data/db" --port 27017 --fork --logpath "$PWD/data/mongod.log"
+Start-Process mongod -ArgumentList "--dbpath `"$PWD\data\db`" --port 27017 --logpath `"$PWD\data\mongod.log`"" -WindowStyle Hidden
 ```
 *(Note: The `data/` folder is already added to `.gitignore`, so your database files will not be accidentally committed to your repository).*
 
 ### B. Setup Backend (FastAPI)
 The backend requires a Python Virtual Environment.
 
-```bash
+```powershell
 cd backend
 
 # Create the virtual environment
-python3 -m venv venv
+python -m venv venv
 
 # Activate the virtual environment
-source venv/bin/activate
+.\venv\Scripts\activate
 
 # Install all backend dependencies
-pip install --upgrade pip
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
 ### C. Setup Frontend (Vite + React)
 The frontend requires Node modules.
 
-```bash
+```powershell
 cd frontend
 
 # Install Node modules (if you face peer dependency issues, run with --legacy-peer-deps)
@@ -64,9 +64,9 @@ npm install --legacy-peer-deps
 You will need **two separate terminals** to run the backend and frontend simultaneously.
 
 ### Terminal 1: Backend
-```bash
+```powershell
 cd backend
-source venv/bin/activate
+.\venv\Scripts\activate
 
 # Start the FastAPI server (Hot-reload enabled)
 uvicorn app.main:app --reload --port 8000
@@ -75,7 +75,7 @@ uvicorn app.main:app --reload --port 8000
 *The API Documentation (Swagger) is at: http://localhost:8000/docs*
 
 ### Terminal 2: Frontend
-```bash
+```powershell
 cd frontend
 
 # Start the Vite development server
@@ -91,7 +91,7 @@ npm run dev
 
 When you are done developing, you can simply press `Ctrl + C` in both of your terminals to stop the frontend and backend servers.
 
-If you also wish to shut down the background MongoDB process, locate its PID and kill it, or use `pkill`:
-```bash
-pkill mongod
+If you also wish to shut down the background MongoDB process, locate its process and stop it, or use `Stop-Process`:
+```powershell
+Stop-Process -Name mongod -Force
 ```
