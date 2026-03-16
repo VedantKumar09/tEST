@@ -27,6 +27,10 @@ export const examAPI = {
 
 // ── Proctoring ───────────────────────────────────────────────────────────────
 export const proctoringAPI = {
+  startSession: (student_id) =>
+    api.post('/api/proctor/start-session', { student_id }).then(r => r.data),
+  endSession: (student_id) =>
+    api.post('/api/proctor/end-session', { student_id }).then(r => r.data),
   analyzeFrame: (image, student_id) =>
     api.post('/api/proctor/analyze', { image, student_id }).then(r => r.data),
   sendBrowserEvent: (student_id, event_type) =>

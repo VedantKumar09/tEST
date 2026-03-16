@@ -16,7 +16,7 @@ from typing import Optional
 
 from ..ai.face_analyzer import analyze_face
 from ..ai.object_detector import detect_objects
-from ..ai.scoring import compute_frame_score, compute_event_score, add_score, get_score
+from ..ai.scoring import compute_frame_score, compute_event_score, add_score, get_score, reset_score
 from ..ai.screenshot_manager import save_screenshot
 from ..ai.proctor_config import (
     YOLO_INTERVAL_S,
@@ -33,6 +33,15 @@ _temporal: dict[str, dict[str, Optional[float]]] = {}
 _last_yolo_run: dict[str, float] = {}
 _cached_yolo: dict[str, dict] = {}       # cached YOLO results per student
 _yolo_running: dict[str, bool] = {}      # prevent duplicate YOLO runs
+
+
+def reset_session(student_id: str) -> None:
+    """Clear all per-student proctoring state for a fresh exam session."""
+    reset_score(student_id)
+    _temporal.pop(student_id, None)
+    _last_yolo_run.pop(student_id, None)
+    _cached_yolo.pop(student_id, None)
+    _yolo_running.pop(student_id, None)
 
 
 def _get_temporal(student_id: str) -> dict:

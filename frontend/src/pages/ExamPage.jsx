@@ -152,7 +152,24 @@ export default function ExamPage() {
   };
 
   // ── Start Exam ──────────────────────────────────────────────────────────────
-  const startExam = () => {
+  const startExam = async () => {
+    // Reset backend proctoring state for a fresh session
+    if (user?.email) {
+      try { await proctoringAPI.startSession(user.email); } catch { /* ignore */ }
+    }
+    // Reset all local proctoring counters
+    setViolations(0);
+    setTabSwitches(0);
+    setRiskScore(0);
+    setRiskLevel('Safe');
+    setEvents([]);
+    setFaceDetected(true);
+    setHeadPose({ yaw: 0, pitch: 0, looking_away: false });
+    setEyeGaze({ direction: 'center', looking_offscreen: false });
+    setAttentionStatus('Focused');
+    setWarningBanners([]);
+    violationTypesRef.current = [];
+
     setStep('exam');
     setExamStarted(true);
     logEvent('info', 'Exam started — AI proctoring active');
@@ -384,6 +401,11 @@ export default function ExamPage() {
       risk_level: riskLevel,
       risk_score: riskScore,
     };
+
+    // Clean up backend proctoring state
+    if (user?.email) {
+      try { await proctoringAPI.endSession(user.email); } catch { /* ignore */ }
+    }
 
     try {
       const result = await examAPI.submitExam({

@@ -7,7 +7,7 @@ from typing import Optional
 import time
 
 from ..database import get_db
-from ..services.proctor_service import analyze_frame, record_browser_event
+from ..services.proctor_service import analyze_frame, record_browser_event, reset_session
 from ..ai.scoring import get_score
 
 router = APIRouter(prefix="/api/proctor", tags=["proctoring"])
@@ -29,6 +29,26 @@ class SecondFrameRequest(BaseModel):
 class BrowserEventRequest(BaseModel):
     student_id: str
     event_type: str  # tab_switch | fullscreen_exit | copy_paste | right_click
+
+
+class SessionRequest(BaseModel):
+    student_id: str
+
+
+# ── Session lifecycle ──────────────────────────────────────────────────────────
+
+@router.post("/start-session")
+async def start_session(body: SessionRequest):
+    """Reset all proctoring state so every exam starts fresh."""
+    reset_session(body.student_id)
+    return {"status": "ok", "message": "Session initialized"}
+
+
+@router.post("/end-session")
+async def end_session(body: SessionRequest):
+    """Clean up proctoring state after exam ends."""
+    reset_session(body.student_id)
+    return {"status": "ok", "message": "Session cleaned up"}
 
 
 # ── Frame analysis (face + objects + scoring + screenshot) ─────────────────────
