@@ -1,0 +1,30 @@
+{
+  "face_detection": {
+    "avg_ms": 14,
+    "p50_ms": 12,
+    "p95_ms": 14
+  },
+  "yolo_detection": {
+    "avg_ms": 249,
+    "p50_ms": 248,
+    "p95_ms": 260
+  },
+  "scoring": {
+    "add_score_avg_us": 2,
+    "decay_avg_us": 1
+  },
+  "behavior": {
+    "avg_us": 9,
+    "p95_us": 10
+  },
+  "identity": {
+    "store_ms": 42,
+    "verify_avg_ms": 15
+  },
+  "browser_events": "sub-microsecond (dict lookup)",
+  "stress": {
+    "avg_ms": 12,
+    "max_ms": 15,
+    "fps": 84.1
+  }
+}

@@ -43,6 +43,8 @@ export const proctoringAPI = {
     api.post('/api/proctor/second-frame', { image, student_id }).then(r => r.data),
   getSecondCamFrame: (student_id) =>
     api.get(`/api/proctor/second-cam/${student_id}`).then(r => r.data),
+  verifyIdentity: (student_id, image) =>
+    api.post('/api/proctor/verify-identity', { student_id, image }).then(r => r.data),
 };
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
@@ -50,4 +52,19 @@ export const adminAPI = {
   getSubmissions: () => api.get('/api/admin/submissions').then(r => r.data),
   getSubmission: (id) => api.get(`/api/admin/submissions/${id}`).then(r => r.data),
   getProctorLogs: () => api.get('/api/admin/proctor-logs').then(r => r.data),
+  getRiskTimeline: (studentId) => api.get(`/api/admin/risk-timeline/${studentId}`).then(r => r.data),
+  getEvidence: (studentId) => api.get(`/api/admin/evidence/${studentId}`).then(r => r.data),
+  flagSubmission: (id) => api.post(`/api/admin/flag/${id}`).then(r => r.data),
+  markSubmission: (id, status) => api.post(`/api/admin/mark/${id}`, { status }).then(r => r.data),
+};
+
+// ── Code Execution ───────────────────────────────────────────────────────────
+export const codeAPI = {
+  getLanguages: () => api.get('/api/code/languages').then(r => r.data),
+  getQuestions: () => api.get('/api/code/questions').then(r => r.data),
+  getQuestion: (id) => api.get(`/api/code/questions/${id}`).then(r => r.data),
+  execute: (language, code, stdin = '') =>
+    api.post('/api/code/execute', { language, code, stdin }).then(r => r.data),
+  submit: (language, code, question_id) =>
+    api.post('/api/code/submit', { language, code, question_id }).then(r => r.data),
 };

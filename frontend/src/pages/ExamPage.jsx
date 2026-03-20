@@ -1,41 +1,47 @@
 /**
- * Exam Page — Main exam interface
- * Left: Primary webcam (server-side AI analysis every 2s) + Secondary phone cam feed
- * Right: MCQ questions + timer
+ * Exam Page — Full exam interface with MCQ + Coding + AI Proctoring
+ *
  * Setup flow: Camera → Identity → QR Cam → Exam
  *
- * Enhanced proctoring:
+ * Exam features:
+ *  - MCQ questions with option selection
+ *  - Coding questions with Monaco Editor, run/submit, stdin/stdout
+ *  - Timer with auto-submit
+ *
+ * Proctoring features:
  *  - Real-time warning overlays (no face, looking away, multiple people, objects)
  *  - Cumulative risk score + risk level from backend scoring engine
  *  - Head pose + eye gaze attention indicators
- *  - Browser monitoring (tab switch, fullscreen exit, copy/paste, right click)
+ *  - Browser monitoring: tab switch, fullscreen exit, copy/paste, right click
+ *  - DevTools detection (window size diff + debugger trap)
+ *  - Fullscreen enforcement on exam start
+ *
+ * Phase 4 enhancements:
+ *  - Monaco Editor integration for coding questions
+ *  - Code execution (run) + submission (grade) via Phase 1 API
+ *  - DevTools detection with violation reporting
+ *  - Fullscreen enforcement with re-prompt
+ *  - Keyboard shortcuts (Ctrl+Enter to run code)
+ *  - Execution status loading indicator
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
-import { examAPI, proctoringAPI } from '../services/api';
+import { examAPI, proctoringAPI, codeAPI } from '../services/api';
+import Editor from '@monaco-editor/react';
 
 const FALLBACK_QUESTIONS = [
-  { id: 1, category: 'CS Fundamentals', text: 'Which data structure uses LIFO ordering?', options: ['Queue', 'Stack', 'Linked List', 'Tree'] },
-  { id: 2, category: 'CS Fundamentals', text: 'Time complexity of binary search?', options: ['O(n)', 'O(n²)', 'O(log n)', 'O(n log n)'] },
-  { id: 3, category: 'CS Fundamentals', text: 'Which protocol is used for secure communication?', options: ['HTTP', 'FTP', 'HTTPS', 'SMTP'] },
-  { id: 4, category: 'CS Fundamentals', text: 'What does DDL stand for in SQL?', options: ['Data Definition Language', 'Data Display Logic', 'Dynamic Data Layer', 'Database Design Language'] },
-  { id: 5, category: 'CS Fundamentals', text: 'Which sorting algorithm has best average-case complexity?', options: ['Bubble Sort', 'Selection Sort', 'Merge Sort', 'Insertion Sort'] },
-  { id: 6, category: 'AI & ML', text: 'Which technique classifies spam emails?', options: ['Linear Regression', 'K-Means', 'Naive Bayes', 'PCA'] },
-  { id: 7, category: 'AI & ML', text: 'Activation function outputting values 0–1?', options: ['ReLU', 'Sigmoid', 'Tanh', 'Leaky ReLU'] },
-  { id: 8, category: 'AI & ML', text: 'Technique to prevent overfitting in neural networks?', options: ['Dropout', 'Batch Norm', 'Gradient Descent', 'Backpropagation'] },
-  { id: 9, category: 'AI & ML', text: 'CNN stands for?', options: ['Computer Neural Nets', 'Convolutional Neural Network', 'Central Neuron Node', 'Connected Network'] },
-  { id: 10, category: 'AI & ML', text: 'Algorithm used for recommendation systems?', options: ['Decision Trees', 'Collaborative Filtering', 'KNN', 'SVM'] },
-  { id: 11, category: 'Networking', text: 'TCP stands for?', options: ['Transfer Control Protocol', 'Transmission Control Protocol', 'Traffic Control Protocol', 'Transfer Call Protocol'] },
-  { id: 12, category: 'Networking', text: 'OSI layer handling routing between networks?', options: ['Transport', 'Data Link', 'Network', 'Application'] },
-  { id: 13, category: 'Networking', text: 'Encryption using public/private key pair?', options: ['Symmetric', 'Asymmetric', 'Hashing', 'Caesar Cipher'] },
-  { id: 14, category: 'Networking', text: 'Attack that floods a server?', options: ['Phishing', 'SQL Injection', 'DDoS', 'Man-in-the-Middle'] },
-  { id: 15, category: 'Networking', text: 'Default HTTPS port?', options: ['80', '21', '443', '8080'] },
+  { id: 1, type: 'mcq', category: 'CS Fundamentals', text: 'Which data structure uses LIFO ordering?', options: ['Queue', 'Stack', 'Linked List', 'Tree'] },
+  { id: 2, type: 'mcq', category: 'CS Fundamentals', text: 'Time complexity of binary search?', options: ['O(n)', 'O(n²)', 'O(log n)', 'O(n log n)'] },
+  { id: 3, type: 'mcq', category: 'CS Fundamentals', text: 'Which protocol is used for secure communication?', options: ['HTTP', 'FTP', 'HTTPS', 'SMTP'] },
 ];
 
 const EXAM_DURATION = 600; // 10 minutes
-const ANALYSIS_INTERVAL_MS = 700; // send frame every 700ms for near-real-time detection
+const ANALYSIS_INTERVAL_MS = 700;
+
+// Monaco language mapping
+const LANG_MAP = { python: 'python', c: 'c', java: 'java', sql: 'sql' };
 
 export default function ExamPage() {
   const { user, logout } = useAuth();
@@ -64,6 +70,17 @@ export default function ExamPage() {
   const [examSubmitted, setExamSubmitted] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
 
+  // ── Coding editor state (Phase 4) ──────────────────────────────────────────
+  const [codeSolutions, setCodeSolutions] = useState({}); // {questionId: code}
+  const [codeOutput, setCodeOutput] = useState('');
+  const [codeRunning, setCodeRunning] = useState(false);
+  const [codeSubmitting, setCodeSubmitting] = useState(false);
+  const [codeStdin, setCodeStdin] = useState('');
+  const [codingScores, setCodingScores] = useState({}); // {questionId: score}
+  const [codingQuestions, setCodingQuestions] = useState({}); // {id: full question data}
+  const [execTime, setExecTime] = useState(null);
+  const lastRunRef = useRef(0); // debounce
+
   // ── Proctoring state ────────────────────────────────────────────────────────
   const [violations, setViolations] = useState(0);
   const [events, setEvents] = useState([]);
@@ -73,19 +90,21 @@ export default function ExamPage() {
   const [showPause, setShowPause] = useState(false);
   const [examTerminated, setExamTerminated] = useState(false);
   const violationTypesRef = useRef([]);
-
-  // ── Enhanced proctoring state ───────────────────────────────────────────────
-  const [warningBanners, setWarningBanners] = useState([]); // active warning messages
+  const [warningBanners, setWarningBanners] = useState([]);
   const [riskScore, setRiskScore] = useState(0);
-  const [riskLevel, setRiskLevel] = useState('Safe');
+  const [riskLevel, setRiskLevel] = useState('Low');
   const [headPose, setHeadPose] = useState({ yaw: 0, pitch: 0, looking_away: false });
   const [eyeGaze, setEyeGaze] = useState({ direction: 'center', looking_offscreen: false });
-  const [attentionStatus, setAttentionStatus] = useState('Focused'); // Focused | Distracted | Away
+  const [attentionStatus, setAttentionStatus] = useState('Focused');
+
+  // ── Fullscreen state (Phase 4) ─────────────────────────────────────────────
+  const [fullscreenExits, setFullscreenExits] = useState(0);
+  const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(false);
 
   const timerRef = useRef(null);
   const analysisRef = useRef(null);
   const viewerWsRef = useRef(null);
-  const warningTimeoutRef = useRef(null);
+  const devtoolsIntervalRef = useRef(null);
 
   const logEvent = (type, msg) => {
     const now = new Date();
@@ -93,11 +112,31 @@ export default function ExamPage() {
     setEvents(prev => [{ type, msg, timeStr }, ...prev].slice(0, 50));
   };
 
-  // ── Load questions ──────────────────────────────────────────────────────────
+  // ── Load questions (MCQ + coding) ──────────────────────────────────────────
   useEffect(() => {
-    examAPI.getQuestions()
-      .then(q => { setQuestions(q); setAnswers(new Array(q.length).fill(-1)); })
-      .catch(() => {});
+    const loadAll = async () => {
+      try {
+        // Load exam questions (MCQ + coding refs)
+        const q = await examAPI.getQuestions();
+        setQuestions(q);
+        setAnswers(new Array(q.filter(x => x.type === 'mcq').length).fill(-1));
+
+        // Load full coding question data (descriptions, starter code)
+        const codingQs = await codeAPI.getQuestions();
+        const map = {};
+        const starters = {};
+        codingQs.forEach(cq => {
+          map[cq.id] = cq;
+          starters[cq.id] = cq.starter_code || '';
+        });
+        setCodingQuestions(map);
+        setCodeSolutions(starters);
+      } catch {
+        setQuestions(FALLBACK_QUESTIONS);
+        setAnswers(new Array(FALLBACK_QUESTIONS.length).fill(-1));
+      }
+    };
+    loadAll();
   }, []);
 
   // ── Build second camera URL ─────────────────────────────────────────────────
@@ -142,37 +181,60 @@ export default function ExamPage() {
     }
   };
 
-  const captureIdentity = () => {
+  const captureIdentity = async () => {
     if (!primaryVideoRef.current) return;
     const canvas = document.createElement('canvas');
     canvas.width = 320; canvas.height = 240;
     canvas.getContext('2d').drawImage(primaryVideoRef.current, 0, 0, 320, 240);
-    setIdentityPhoto(canvas.toDataURL('image/jpeg', 0.8));
+    const photo = canvas.toDataURL('image/jpeg', 0.8);
+    setIdentityPhoto(photo);
     logEvent('success', 'Identity photo captured');
+
+    // Send to backend for identity verification
+    if (user?.email) {
+      try {
+        await proctoringAPI.verifyIdentity(user.email, photo);
+        logEvent('success', 'Identity verified by server');
+      } catch { /* handled gracefully */ }
+    }
   };
+
+  // ── Fullscreen enforcement (Phase 4) ────────────────────────────────────────
+  const enterFullscreen = useCallback(async () => {
+    try {
+      await document.documentElement.requestFullscreen();
+      setShowFullscreenPrompt(false);
+    } catch {
+      // Browser may block fullscreen without user gesture
+    }
+  }, []);
 
   // ── Start Exam ──────────────────────────────────────────────────────────────
   const startExam = async () => {
-    // Reset backend proctoring state for a fresh session
     if (user?.email) {
       try { await proctoringAPI.startSession(user.email); } catch { /* ignore */ }
     }
-    // Reset all local proctoring counters
     setViolations(0);
     setTabSwitches(0);
     setRiskScore(0);
-    setRiskLevel('Safe');
+    setRiskLevel('Low');
     setEvents([]);
     setFaceDetected(true);
     setHeadPose({ yaw: 0, pitch: 0, looking_away: false });
     setEyeGaze({ direction: 'center', looking_offscreen: false });
     setAttentionStatus('Focused');
     setWarningBanners([]);
+    setFullscreenExits(0);
     violationTypesRef.current = [];
+    setCodeOutput('');
+    setCodingScores({});
 
     setStep('exam');
     setExamStarted(true);
     logEvent('info', 'Exam started — AI proctoring active');
+
+    // Enter fullscreen
+    enterFullscreen();
   };
 
   // ── Timer ───────────────────────────────────────────────────────────────────
@@ -193,27 +255,24 @@ export default function ExamPage() {
       if (prev.includes(msg)) return prev;
       return [...prev, msg];
     });
-    // Auto-clear after 4 seconds
     setTimeout(() => {
       setWarningBanners(prev => prev.filter(m => m !== msg));
     }, 4000);
   }, []);
 
-  // ── Compute attention status from head pose + eye gaze ──────────────────────
   const computeAttention = useCallback((hp, eg) => {
     if (hp.looking_away && eg.looking_offscreen) return 'Away';
     if (hp.looking_away || eg.looking_offscreen) return 'Distracted';
     return 'Focused';
   }, []);
 
-  // ── Send browser events to backend ──────────────────────────────────────────
   const sendBrowserEvent = useCallback(async (eventType) => {
     if (!user?.email) return;
     try {
       const res = await proctoringAPI.sendBrowserEvent(user.email, eventType);
-      if (res.score) {
-        setRiskScore(res.score.cumulative_score || 0);
-        setRiskLevel(res.score.risk_level || 'Safe');
+      if (res.cumulative_score !== undefined) {
+        setRiskScore(res.cumulative_score || 0);
+        setRiskLevel(res.risk_level || 'Low');
       }
     } catch { /* ignore */ }
   }, [user]);
@@ -234,24 +293,38 @@ export default function ExamPage() {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [examStarted, sendBrowserEvent, showWarningBanner]);
 
-  // ── Fullscreen exit detection ───────────────────────────────────────────────
+  // ── Fullscreen exit detection + enforcement ─────────────────────────────────
   useEffect(() => {
     if (!examStarted) return;
     const onFullscreen = () => {
       if (!document.fullscreenElement) {
+        setFullscreenExits(prev => {
+          const next = prev + 1;
+          if (next >= 3) {
+            // After 3 exits, auto-submit
+            logEvent('danger', 'Fullscreen exited 3 times — auto-submitting');
+            handleSubmit(true);
+          }
+          return next;
+        });
         addViolation('fullscreen_exit');
         logEvent('warning', 'Fullscreen exited');
         sendBrowserEvent('fullscreen_exit');
+        showWarningBanner('⚠ Fullscreen exited — please re-enter fullscreen');
+        setShowFullscreenPrompt(true);
       }
     };
     document.addEventListener('fullscreenchange', onFullscreen);
     return () => document.removeEventListener('fullscreenchange', onFullscreen);
-  }, [examStarted, sendBrowserEvent]);
+  }, [examStarted, sendBrowserEvent, showWarningBanner]);
 
   // ── Copy / Paste detection ──────────────────────────────────────────────────
   useEffect(() => {
     if (!examStarted) return;
     const onCopy = (e) => {
+      // Allow copy/paste inside Monaco editor area for coding questions
+      const target = e.target;
+      if (target && target.closest && target.closest('.monaco-editor')) return;
       e.preventDefault();
       addViolation('copy_paste');
       logEvent('danger', 'Copy/paste detected!');
@@ -281,7 +354,63 @@ export default function ExamPage() {
     return () => document.removeEventListener('contextmenu', onRightClick);
   }, [examStarted, sendBrowserEvent]);
 
-  // ── Server-side AI analysis every 2 seconds ─────────────────────────────────
+  // ── DevTools detection (Phase 4) ────────────────────────────────────────────
+  useEffect(() => {
+    if (!examStarted) return;
+
+    const checkDevTools = () => {
+      // Method 1: Window size difference
+      const widthDiff = window.outerWidth - window.innerWidth;
+      const heightDiff = window.outerHeight - window.innerHeight;
+      if (widthDiff > 160 || heightDiff > 160) {
+        addViolation('devtools_open');
+        logEvent('danger', 'DevTools detected (window size)');
+        showWarningBanner('⚠ Developer Tools detected — close them immediately');
+        sendBrowserEvent('devtools_open');
+      }
+    };
+
+    // Method 2: Debugger trap via console timing
+    const debuggerTrap = () => {
+      const start = performance.now();
+      // eslint-disable-next-line no-debugger
+      debugger;
+      const end = performance.now();
+      if (end - start > 100) {
+        addViolation('devtools_open');
+        logEvent('danger', 'DevTools detected (debugger trap)');
+        showWarningBanner('⚠ Developer Tools detected — close them immediately');
+        sendBrowserEvent('devtools_open');
+      }
+    };
+
+    // Check every 3 seconds (lightweight)
+    devtoolsIntervalRef.current = setInterval(() => {
+      checkDevTools();
+      // Only run debugger trap occasionally (every 15s)
+      if (Date.now() % 15000 < 3000) {
+        try { debuggerTrap(); } catch { /* ignore */ }
+      }
+    }, 3000);
+
+    return () => clearInterval(devtoolsIntervalRef.current);
+  }, [examStarted, sendBrowserEvent, showWarningBanner]);
+
+  // ── Keyboard shortcuts (Ctrl+Enter to run code) ────────────────────────────
+  useEffect(() => {
+    if (!examStarted) return;
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        const q = questions[currentQ];
+        if (q?.type === 'coding') runCode();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [examStarted, currentQ, questions]);
+
+  // ── AI analysis ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!examStarted || examSubmitted) return;
     analysisRef.current = setInterval(() => analyzeFrame(), ANALYSIS_INTERVAL_MS);
@@ -301,24 +430,16 @@ export default function ExamPage() {
     if (!frame || !user?.email) return;
     try {
       const res = await proctoringAPI.analyzeFrame(frame, user.email);
-
-      // Face detection
       setFaceDetected(res.face_detected);
-
-      // Head pose + eye gaze
       if (res.head_pose) setHeadPose(res.head_pose);
       if (res.eye_gaze) setEyeGaze(res.eye_gaze);
       if (res.head_pose && res.eye_gaze) {
         setAttentionStatus(computeAttention(res.head_pose, res.eye_gaze));
       }
-
-      // Risk score from backend
       if (res.score) {
         setRiskScore(res.score.cumulative_score || 0);
-        setRiskLevel(res.score.risk_level || 'Safe');
+        setRiskLevel(res.score.risk_level || 'Low');
       }
-
-      // Warning banners + violation logging
       if (res.no_face) {
         addViolation('no_face');
         logEvent('danger', 'No face detected!');
@@ -344,35 +465,25 @@ export default function ExamPage() {
           showWarningBanner(`⚠ Suspicious object detected: ${obj.class}`);
         });
       }
-    } catch { /* ignore network errors */ }
+    } catch { /* ignore */ }
   };
 
-  // ── WebSocket receiver for secondary camera (30 FPS) ────────────────────────
+  // ── WebSocket secondary camera ──────────────────────────────────────────────
   useEffect(() => {
     if (!examStarted || !user?.email) return;
     const sid = encodeURIComponent(user.email);
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${window.location.host}/ws/viewer/${sid}`;
-
     const connect = () => {
       const ws = new WebSocket(url);
-      ws.onmessage = (e) => {
-        setSecondCamFrame(e.data);
-        setSecondCamConnected(true);
-      };
-      ws.onclose = () => {
-        setSecondCamConnected(false);
-        setTimeout(() => { if (examStarted && !examSubmitted) connect(); }, 2000);
-      };
+      ws.onmessage = (e) => { setSecondCamFrame(e.data); setSecondCamConnected(true); };
+      ws.onclose = () => { setSecondCamConnected(false); setTimeout(() => { if (examStarted && !examSubmitted) connect(); }, 2000); };
       const ping = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 10000);
       ws.addEventListener('close', () => clearInterval(ping));
       viewerWsRef.current = ws;
     };
     connect();
-
-    return () => {
-      viewerWsRef.current?.close();
-    };
+    return () => { viewerWsRef.current?.close(); };
   }, [examStarted, user]);
 
   const addViolation = (type) => {
@@ -386,13 +497,84 @@ export default function ExamPage() {
     });
   };
 
-  // ── Submit ──────────────────────────────────────────────────────────────────
+  // ── Code execution (Phase 4) ────────────────────────────────────────────────
+  const runCode = async () => {
+    const q = questions[currentQ];
+    if (!q || q.type !== 'coding') return;
+
+    // Debounce: min 1.5s between runs
+    if (Date.now() - lastRunRef.current < 1500) return;
+    lastRunRef.current = Date.now();
+
+    const code = codeSolutions[q.id] || '';
+    const lang = q.language || 'python';
+
+    setCodeRunning(true);
+    setCodeOutput('⏳ Running...');
+    setExecTime(null);
+
+    try {
+      const result = await codeAPI.execute(lang, code, codeStdin);
+      let output = '';
+      if (result.error) output += `❌ ${result.error}\n`;
+      if (result.stdout) output += result.stdout;
+      if (result.stderr) output += `\n⚠ ${result.stderr}`;
+      if (result.timed_out) output = '⏱ Time Limit Exceeded (10s max)';
+      if (!output.trim()) output = '(no output)';
+      setCodeOutput(output);
+      setExecTime(result.execution_time_ms);
+    } catch (err) {
+      setCodeOutput(`❌ Network error: ${err.message}`);
+    } finally {
+      setCodeRunning(false);
+    }
+  };
+
+  const submitCode = async () => {
+    const q = questions[currentQ];
+    if (!q || q.type !== 'coding') return;
+    const code = codeSolutions[q.id] || '';
+    const lang = q.language || 'python';
+
+    setCodeSubmitting(true);
+    setCodeOutput('📝 Grading against test cases...');
+
+    try {
+      const result = await codeAPI.submit(lang, code, q.id);
+      let output = `📊 Score: ${result.score}% (${result.passed}/${result.total} tests passed)\n\n`;
+      result.results?.forEach(tc => {
+        const icon = tc.passed ? '✅' : '❌';
+        output += `${icon} Test ${tc.test_case}: `;
+        if (tc.passed) {
+          output += `Passed (${tc.execution_time_ms}ms)\n`;
+        } else {
+          output += `Failed\n   Expected: ${tc.expected}\n   Got:      ${tc.actual}\n`;
+          if (tc.stderr) output += `   Error: ${tc.stderr}\n`;
+        }
+      });
+      setCodeOutput(output);
+      setCodingScores(prev => ({ ...prev, [q.id]: result.score }));
+      setExecTime(null);
+    } catch (err) {
+      setCodeOutput(`❌ Submission error: ${err.message}`);
+    } finally {
+      setCodeSubmitting(false);
+    }
+  };
+
+  // ── Submit exam ─────────────────────────────────────────────────────────────
   const handleSubmit = async (terminated = false) => {
     if (examSubmitted) return;
     setExamSubmitted(true);
     clearInterval(timerRef.current);
     clearInterval(analysisRef.current);
+    clearInterval(devtoolsIntervalRef.current);
     viewerWsRef.current?.close();
+
+    // Exit fullscreen
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch { /* ignore */ }
+    }
 
     const procData = {
       total_violations: violations,
@@ -402,7 +584,6 @@ export default function ExamPage() {
       risk_score: riskScore,
     };
 
-    // Clean up backend proctoring state
     if (user?.email) {
       try { await proctoringAPI.endSession(user.email); } catch { /* ignore */ }
     }
@@ -410,20 +591,23 @@ export default function ExamPage() {
     try {
       const result = await examAPI.submitExam({
         answers,
+        coding_scores: codingScores,
         time_used: EXAM_DURATION - timeLeft,
         proctoring_data: procData,
       });
       result.proctoring_summary = procData;
       localStorage.setItem('mm_exam_result', JSON.stringify(result));
     } catch {
-      const correct = answers.filter((a, i) => a !== -1 && questions[i] && a === (FALLBACK_QUESTIONS[i]?.correct ?? -99)).length;
+      const mcqQuestions = questions.filter(q => q.type === 'mcq' || !q.type);
+      const correct = answers.filter((a, i) => a !== -1 && mcqQuestions[i]).length;
       const localResult = {
-        score: Math.round((correct / questions.length) * 100),
+        score: Math.round((correct / mcqQuestions.length) * 100),
         correct,
         questions_total: questions.length,
-        questions_answered: answers.filter(a => a !== -1).length,
+        questions_answered: answers.filter(a => a !== -1).length + Object.keys(codingScores).length,
         time_used: EXAM_DURATION - timeLeft,
         terminated,
+        coding_scores: codingScores,
         proctoring_summary: procData,
       };
       localStorage.setItem('mm_exam_result', JSON.stringify(localResult));
@@ -431,16 +615,25 @@ export default function ExamPage() {
     navigate('/score');
   };
 
+  // ── Derived values ──────────────────────────────────────────────────────────
   const fmtTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   const timerColor = timeLeft <= 60 ? 'var(--danger)' : timeLeft <= 180 ? 'var(--warning)' : 'var(--accent)';
   const letters = ['A', 'B', 'C', 'D'];
   const q = questions[currentQ];
+  const isCoding = q?.type === 'coding';
 
-  // Risk level colour
-  const riskColor = riskLevel === 'Cheating' ? 'var(--danger)' : riskLevel === 'High Risk' ? '#ff6b35' : riskLevel === 'Suspicious' ? 'var(--warning)' : 'var(--success)';
-  // Attention colour
+  // Separate MCQ and coding questions for navigation
+  const mcqQuestions = questions.filter(x => x.type === 'mcq' || !x.type);
+  const codingQList = questions.filter(x => x.type === 'coding');
+  // MCQ index for this question
+  const mcqIndex = isCoding ? -1 : mcqQuestions.indexOf(q);
+
+  const riskColor = riskLevel === 'Critical' ? 'var(--danger)' : riskLevel === 'High' ? '#ff6b35' : riskLevel === 'Medium' ? 'var(--warning)' : 'var(--success)';
   const attColor = attentionStatus === 'Away' ? 'var(--danger)' : attentionStatus === 'Distracted' ? 'var(--warning)' : 'var(--success)';
   const attIcon = attentionStatus === 'Focused' ? '🎯' : attentionStatus === 'Distracted' ? '👀' : '🚫';
+
+  // Coding question data
+  const codingData = isCoding ? codingQuestions[q.id] : null;
 
   // ──────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -463,8 +656,6 @@ export default function ExamPage() {
       </nav>
 
       {/* ── SETUP OVERLAYS ── */}
-
-      {/* Step 1: Camera */}
       {step === 'camera' && (
         <div className="setup-overlay">
           <div className="setup-card">
@@ -478,7 +669,6 @@ export default function ExamPage() {
         </div>
       )}
 
-      {/* Step 2: Identity */}
       {step === 'identity' && (
         <div className="setup-overlay">
           <div className="setup-card">
@@ -504,7 +694,6 @@ export default function ExamPage() {
         </div>
       )}
 
-      {/* Step 3: QR Code */}
       {step === 'qr' && (
         <div className="setup-overlay">
           <div className="setup-card" style={{ maxWidth: 520 }}>
@@ -528,7 +717,6 @@ export default function ExamPage() {
       )}
 
       {/* ── PROCTORING OVERLAYS ── */}
-
       {showWarning && (
         <div className="warn-overlay" style={{ pointerEvents: 'none' }}>
           <div className="warn-card" style={{ border: '2px solid var(--warning)' }}>
@@ -559,13 +747,30 @@ export default function ExamPage() {
         </div>
       )}
 
+      {showFullscreenPrompt && (
+        <div className="warn-overlay blocking">
+          <div className="warn-card" style={{ border: '2px solid var(--warning)' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⛶</div>
+            <h2 style={{ color: 'var(--warning)', marginBottom: 8 }}>Fullscreen Required</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: 20 }}>
+              You have exited fullscreen ({fullscreenExits}/3 allowed). Please re-enter fullscreen to continue.
+            </p>
+            <button className="btn btn-primary btn-lg" onClick={enterFullscreen}>
+              ⛶ Re-enter Fullscreen
+            </button>
+          </div>
+        </div>
+      )}
+
       {showSubmitModal && (
         <div className="warn-overlay blocking">
           <div className="warn-card">
             <div style={{ fontSize: 40, marginBottom: 12 }}>📤</div>
             <h2 style={{ marginBottom: 8 }}>Submit Exam?</h2>
             <p style={{ color: 'var(--text-secondary)', marginBottom: 20 }}>
-              Answered <strong>{answers.filter(a => a !== -1).length}</strong> of <strong>{questions.length}</strong> questions. This cannot be undone.
+              MCQ Answered: <strong>{answers.filter(a => a !== -1).length}</strong> / <strong>{mcqQuestions.length}</strong> &nbsp;|&nbsp;
+              Coding Submitted: <strong>{Object.keys(codingScores).length}</strong> / <strong>{codingQList.length}</strong>.
+              This cannot be undone.
             </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <button className="btn btn-outline" onClick={() => setShowSubmitModal(false)}>← Go Back</button>
@@ -588,14 +793,12 @@ export default function ExamPage() {
                 <span className="cam-label">🎥 Primary</span>
                 <span className={`cam-status-dot ${cameraOn ? 'active' : ''}`} />
 
-                {/* ── Debug overlay — head pose & gaze ── */}
                 {examStarted && (
                   <div style={{
                     position: 'absolute', top: 4, left: 4,
                     background: 'rgba(0,0,0,0.7)', color: '#0f0',
                     fontFamily: 'monospace', fontSize: 10, padding: '4px 7px',
-                    borderRadius: 4, zIndex: 11, lineHeight: 1.5,
-                    pointerEvents: 'none',
+                    borderRadius: 4, zIndex: 11, lineHeight: 1.5, pointerEvents: 'none',
                   }}>
                     <div>Yaw: {headPose.yaw ?? 0}° | Pitch: {headPose.pitch ?? 0}°</div>
                     <div>Away: {headPose.looking_away ? '🔴 YES' : '🟢 NO'}</div>
@@ -604,7 +807,6 @@ export default function ExamPage() {
                   </div>
                 )}
 
-                {/* ── Real-time warning banners over camera ── */}
                 {warningBanners.length > 0 && (
                   <div style={{
                     position: 'absolute', bottom: 28, left: 4, right: 4,
@@ -612,15 +814,9 @@ export default function ExamPage() {
                   }}>
                     {warningBanners.map((msg, i) => (
                       <div key={i} style={{
-                        background: 'rgba(239, 68, 68, 0.92)',
-                        color: '#fff',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        padding: '5px 10px',
-                        borderRadius: 6,
-                        textAlign: 'center',
-                        backdropFilter: 'blur(4px)',
-                        animation: 'fadeIn 0.3s ease',
+                        background: 'rgba(239, 68, 68, 0.92)', color: '#fff',
+                        fontSize: 11, fontWeight: 700, padding: '5px 10px',
+                        borderRadius: 6, textAlign: 'center', backdropFilter: 'blur(4px)',
                       }}>
                         {msg}
                       </div>
@@ -648,7 +844,7 @@ export default function ExamPage() {
               </div>
             </div>
 
-            {/* Stats — enhanced with risk score + attention */}
+            {/* Stats */}
             <div className="proctor-stats">
               {[
                 { val: violations, lbl: 'Violations', color: violations > 5 ? 'var(--danger)' : violations > 0 ? 'var(--warning)' : 'var(--success)' },
@@ -683,48 +879,157 @@ export default function ExamPage() {
           <main className="exam-panel">
             {/* Header */}
             <div className="exam-header">
-              <h2>📝 Demo Assessment — {user?.name}</h2>
-              <div className="timer" style={{ color: timerColor }}>{fmtTime(timeLeft)}</div>
-            </div>
-
-            {/* Question area */}
-            <div className="question-area">
-              <div className="glass-card question-card">
-                <div className="q-meta">
-                  <span className="q-number">Question {currentQ + 1} of {questions.length}</span>
-                  <span className="badge badge-info">{q?.category}</span>
-                </div>
-                <div className="q-text">{q?.text}</div>
-                <ul className="options-list">
-                  {q?.options.map((opt, i) => (
-                    <li
-                      key={i}
-                      className={`option-item ${answers[currentQ] === i ? 'selected' : ''}`}
-                      onClick={() => {
-                        if (!examStarted || examSubmitted) return;
-                        const next = [...answers];
-                        next[currentQ] = i;
-                        setAnswers(next);
-                      }}
-                    >
-                      <span className="option-letter">{letters[i]}</span>
-                      <span>{opt}</span>
-                    </li>
-                  ))}
-                </ul>
+              <h2>📝 Assessment — {user?.name}</h2>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <span className="risk-indicator" style={{ background: riskColor + '22', color: riskColor, border: `1px solid ${riskColor}44` }}>
+                  {riskLevel} ({riskScore})
+                </span>
+                <div className="timer" style={{ color: timerColor }}>{fmtTime(timeLeft)}</div>
               </div>
             </div>
+
+            {/* ── MCQ Question ── */}
+            {!isCoding && (
+              <div className="question-area">
+                <div className="glass-card question-card">
+                  <div className="q-meta">
+                    <span className="q-number">Question {currentQ + 1} of {questions.length}</span>
+                    <span className="badge badge-info">{q?.category}</span>
+                  </div>
+                  <div className="q-text">{q?.text}</div>
+                  <ul className="options-list">
+                    {q?.options?.map((opt, i) => (
+                      <li
+                        key={i}
+                        className={`option-item ${answers[mcqIndex] === i ? 'selected' : ''}`}
+                        onClick={() => {
+                          if (!examStarted || examSubmitted) return;
+                          const next = [...answers];
+                          next[mcqIndex] = i;
+                          setAnswers(next);
+                        }}
+                      >
+                        <span className="option-letter">{letters[i]}</span>
+                        <span>{opt}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* ── Coding Question (Phase 4) ── */}
+            {isCoding && codingData && (
+              <div className="coding-area">
+                {/* Question description */}
+                <div className="coding-question-panel">
+                  <div className="q-meta">
+                    <span className="q-number">Question {currentQ + 1} of {questions.length}</span>
+                    <span className="badge badge-info">{q.category}</span>
+                    <span className="badge badge-success">{q.difficulty}</span>
+                    {codingScores[q.id] !== undefined && (
+                      <span className="badge" style={{ background: codingScores[q.id] >= 100 ? 'var(--success)' : 'var(--warning)', color: '#fff' }}>
+                        Score: {codingScores[q.id]}%
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="coding-title">{codingData.title}</h3>
+                  <div className="coding-description">{codingData.description}</div>
+                </div>
+
+                {/* Editor + output */}
+                <div className="coding-editor-panel">
+                  <div className="editor-header">
+                    <span className="editor-lang-badge">{q.language?.toUpperCase()}</span>
+                    <div className="editor-actions">
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={runCode}
+                        disabled={codeRunning || codeSubmitting}
+                        title="Ctrl+Enter"
+                      >
+                        {codeRunning ? '⏳ Running...' : '▶ Run Code'}
+                      </button>
+                      <button
+                        className="btn btn-success btn-sm"
+                        onClick={submitCode}
+                        disabled={codeRunning || codeSubmitting}
+                      >
+                        {codeSubmitting ? '📝 Grading...' : '📤 Submit'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="monaco-wrapper">
+                    <Editor
+                      height="300px"
+                      language={LANG_MAP[q.language] || 'python'}
+                      theme="vs-dark"
+                      value={codeSolutions[q.id] || ''}
+                      onChange={(val) => setCodeSolutions(prev => ({ ...prev, [q.id]: val || '' }))}
+                      options={{
+                        fontSize: 14,
+                        minimap: { enabled: false },
+                        scrollBeyondLastLine: false,
+                        wordWrap: 'on',
+                        automaticLayout: true,
+                        tabSize: 4,
+                        lineNumbers: 'on',
+                        renderLineHighlight: 'all',
+                        padding: { top: 8 },
+                      }}
+                    />
+                  </div>
+
+                  {/* Stdin input */}
+                  <div className="stdin-section">
+                    <label className="stdin-label">📥 Input (stdin)</label>
+                    <textarea
+                      className="stdin-textarea"
+                      value={codeStdin}
+                      onChange={(e) => setCodeStdin(e.target.value)}
+                      placeholder="Enter input here (one value per line)..."
+                      rows={2}
+                    />
+                  </div>
+
+                  {/* Output console */}
+                  <div className="output-console">
+                    <div className="output-header">
+                      <span>📤 Output</span>
+                      {execTime !== null && <span className="exec-time">{execTime}ms</span>}
+                    </div>
+                    <pre className="output-content">{codeOutput || 'Run your code to see output here.'}</pre>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Coding question but no data loaded yet */}
+            {isCoding && !codingData && (
+              <div className="question-area">
+                <div className="glass-card question-card" style={{ textAlign: 'center', padding: '40px' }}>
+                  <span style={{ fontSize: 32 }}>⏳</span>
+                  <p>Loading coding challenge...</p>
+                </div>
+              </div>
+            )}
 
             {/* Nav bar */}
             <div className="question-nav">
               <div className="q-dots">
-                {questions.map((_, i) => (
+                {questions.map((qItem, i) => (
                   <span
                     key={i}
-                    className={`q-dot ${i === currentQ ? 'current' : ''} ${answers[i] !== -1 ? 'answered' : ''}`}
+                    className={`q-dot ${i === currentQ ? 'current' : ''} ${
+                      qItem.type === 'coding'
+                        ? codingScores[qItem.id] !== undefined ? 'answered' : ''
+                        : answers[mcqQuestions.indexOf(qItem)] !== -1 ? 'answered' : ''
+                    } ${qItem.type === 'coding' ? 'coding-dot' : ''}`}
                     onClick={() => examStarted && setCurrentQ(i)}
+                    title={qItem.type === 'coding' ? `Coding: ${qItem.title}` : `MCQ ${i + 1}`}
                   >
-                    {i + 1}
+                    {qItem.type === 'coding' ? '‹›' : i + 1}
                   </span>
                 ))}
               </div>

@@ -7,7 +7,7 @@ from typing import Optional
 import time
 
 from ..database import get_db
-from ..services.proctor_service import analyze_frame, record_browser_event, reset_session
+from ..services.proctor_service import analyze_frame, record_browser_event, reset_session, store_identity_reference
 from ..ai.scoring import get_score
 
 router = APIRouter(prefix="/api/proctor", tags=["proctoring"])
@@ -49,6 +49,26 @@ async def end_session(body: SessionRequest):
     """Clean up proctoring state after exam ends."""
     reset_session(body.student_id)
     return {"status": "ok", "message": "Session cleaned up"}
+
+
+
+
+class VerifyIdentityRequest(BaseModel):
+    student_id: str
+    image: str       # base64 JPEG reference photo
+
+
+@router.post("/verify-identity")
+async def verify_identity(body: VerifyIdentityRequest):
+    """Store the identity reference photo for a student.
+    Extracts face embedding via MediaPipe for continuous re-verification.
+    """
+    result = store_identity_reference(body.student_id, body.image)
+    return {
+        "status": result.get("status", "ok"),
+        "verified": result.get("status") == "ok",
+        "message": result.get("message", "Identity stored"),
+    }
 
 
 # ── Frame analysis (face + objects + scoring + screenshot) ─────────────────────

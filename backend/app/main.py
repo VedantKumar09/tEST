@@ -5,15 +5,33 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from .database import connect_db, close_db
-from .routes import auth, exam, proctoring, admin
+from .routes import auth, exam, proctoring, admin, code
+from .ai.object_detector import warm_up as yolo_warm_up
+from .ai.face_analyzer import analyze_face
+from .ai.hand_face_detector import warm_up as hand_warm_up
 
 # WebSocket relay state: student_id -> {"phone": ws, "viewer": ws}
 _ws_connections: dict[str, dict] = {}
 
+import numpy as np
+import cv2
+import base64
+
+def _make_dummy_frame():
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    _, buf = cv2.imencode(".jpg", img)
+    return "data:image/jpeg;base64," + base64.b64encode(buf).decode()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
+    # Warm up models to prevent cold-start latency
+    try:
+        yolo_warm_up()
+        analyze_face(_make_dummy_frame(), "warmup")
+        hand_warm_up()
+    except Exception as e:
+        print(f"Warning: Model warm-up failed: {e}")
     yield
     await close_db()
 
@@ -30,6 +48,7 @@ app.include_router(auth.router)
 app.include_router(exam.router)
 app.include_router(proctoring.router)
 app.include_router(admin.router)
+app.include_router(code.router)
 
 
 # ── WebSocket Relay: Phone → PC viewer (30 FPS) ───────────────────────────────
@@ -90,6 +109,28 @@ async def lan_ip():
     return {"ip": ip}
 
 
+# ── WebSocket: Admin Live Alerts ──────────────────────────────────────────────
+
+@app.websocket("/ws/admin/alerts")
+async def admin_alerts_ws(websocket: WebSocket):
+    """
+    Admin clients connect here to receive real-time violation alerts.
+    Alerts are pushed by proctor_service when violations are confirmed.
+    """
+    from .services.proctor_service import register_admin_ws, unregister_admin_ws
+    await websocket.accept()
+    register_admin_ws(websocket)
+    try:
+        while True:
+            # Keep the connection alive; client doesn't need to send data
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        unregister_admin_ws(websocket)
+    except Exception:
+        unregister_admin_ws(websocket)
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "service": "MindMesh v2", "version": "2.0.0"}
+
