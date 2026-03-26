@@ -105,9 +105,14 @@ async def submit_exam(body: SubmitRequest):
         final_score = mcq_score
 
     # Run Agentic Supervisor Action
-    events = body.proctoring_data.get("events", []) if isinstance(body.proctoring_data, dict) else []
-    violations = body.proctoring_data.get("violations", 0) if isinstance(body.proctoring_data, dict) else 0
-    agent_report = generate_supervisor_report(events, violations, body.coding_scores, body.time_used)
+    if isinstance(body.proctoring_data, dict):
+        events = body.proctoring_data.get("events", [])
+        violations = body.proctoring_data.get("violations", body.proctoring_data.get("total_violations", 0))
+    else:
+        events = []
+        violations = 0
+
+    agent_report = generate_supervisor_report(events, violations, body.coding_scores, body.time_used, exam_finished=True)
 
     result = {
         "score": final_score,

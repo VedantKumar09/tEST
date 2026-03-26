@@ -9,7 +9,7 @@ from ..config import settings
 COOLDOWN_SECONDS = 20   # minimum gap between API calls
 LAST_CALL_TIME = 0
 
-PROVIDER = (settings.AI_PROVIDER or "gemini").strip().lower()
+PROVIDER = (settings.AI_PROVIDER or "groq").strip().lower()
 
 # =========================
 # PROMPT BUILDER (OPTIMIZED)
@@ -95,6 +95,45 @@ def _run_gemini(prompt):
 
 
 # =========================
+# GROQ
+# =========================
+def _run_groq(prompt):
+    api_key = settings.GROQ_API_KEY or os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("Missing GROQ_API_KEY")
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": settings.GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are an AI Exam Supervisor. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+    }
+
+    for attempt in range(3):
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        if response.status_code == 429:
+            time.sleep(10 * (attempt + 1))
+            continue
+        if response.status_code in (401, 403):
+            raise RuntimeError("Groq key invalid or unauthorized")
+        response.raise_for_status()
+
+        data = response.json()
+        text = data["choices"][0]["message"]["content"]
+        return _parse_json_text(text)
+
+    raise RuntimeError("Groq rate limit exceeded")
+
+
+# =========================
 # MAIN FUNCTION (SAFE)
 # =========================
 def generate_supervisor_report(events, violations, coding_scores, exam_duration, exam_finished=False):
@@ -122,10 +161,12 @@ def generate_supervisor_report(events, violations, coding_scores, exam_duration,
 
     # 🚨 3. Only ONE provider (no spam)
     try:
-        if PROVIDER == "gemini":
+        if PROVIDER == "groq":
+            result = _run_groq(prompt)
+        elif PROVIDER == "gemini":
             result = _run_gemini(prompt)
         else:
-            raise RuntimeError("Only Gemini enabled in free-tier mode")
+            raise RuntimeError("Unsupported provider configured")
 
         return {
             "probability_cheating": result.get("probability_cheating", "Unknown"),
@@ -136,6 +177,6 @@ def generate_supervisor_report(events, violations, coding_scores, exam_duration,
     except Exception as e:
         return {
             "probability_cheating": "Error",
-            "reasoning": f"API failed: {str(e)}",
+            "reasoning": f"{PROVIDER.upper()} API failed: {str(e)}",
             "recommended_action": "Manual Review Required"
         }

@@ -51,6 +51,7 @@ export default function ExamPage() {
   const primaryVideoRef = useRef(null);
   const streamRef = useRef(null);
   const [cameraOn, setCameraOn] = useState(false);
+  const [cameraError, setCameraError] = useState('');
   const [identityPhoto, setIdentityPhoto] = useState(null);
 
   // Secondary cam
@@ -196,6 +197,7 @@ export default function ExamPage() {
 
   // ── Primary camera init ─────────────────────────────────────────────────────
   const startCamera = async () => {
+    setCameraError('');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       streamRef.current = stream;
@@ -204,8 +206,11 @@ export default function ExamPage() {
       }
       setCameraOn(true);
       setStep('identity');
-    } catch {
-      setStep('identity');
+    } catch (err) {
+      setCameraOn(false);
+      const message = err?.message || 'Camera permission denied or unavailable. Please allow camera and retry.';
+      setCameraError(message);
+      setStep('camera');
     }
   };
 
@@ -431,6 +436,8 @@ export default function ExamPage() {
         
         predict();
       } catch (err) {
+        logEvent('warning', 'AI vision initialization failed. Proctoring AI paused.');
+        showWarningBanner('⚠ AI vision failed to initialize');
         console.error("WASM Vision setup failed:", err);
       }
     };
@@ -492,15 +499,17 @@ export default function ExamPage() {
     if (examSubmitted) return;
     setExamSubmitted(true);
     clearInterval(timerRef.current);
-    clearInterval(analysisRef.current);
+    if (analysisRef.current) cancelAnimationFrame(analysisRef.current);
     viewerWsRef.current?.close();
 
     const procData = {
+      violations,
       total_violations: violations,
       violation_types: [...new Set(violationTypesRef.current)],
       tab_switches: tabSwitches,
       risk_level: riskLevel,
       risk_score: riskScore,
+      events,
     };
 
     try {
@@ -568,6 +577,11 @@ export default function ExamPage() {
             <div className="setup-icon">📹</div>
             <h2>Enable Camera</h2>
             <p>MindMesh needs your webcam for AI proctoring. Your video is analyzed on the server for face detection and object detection. It is never recorded or stored.</p>
+            {cameraError && (
+              <div className="alert alert-error" style={{ marginBottom: 14, fontSize: 12 }}>
+                {cameraError}
+              </div>
+            )}
             <button className="btn btn-primary btn-lg" onClick={startCamera}>
               🔓 Enable Camera & Continue
             </button>
