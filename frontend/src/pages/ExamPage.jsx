@@ -82,6 +82,8 @@ export default function ExamPage() {
   const [violations, setViolations] = useState(0);
   const [events, setEvents] = useState([]);
   const [tabSwitches, setTabSwitches] = useState(0);
+  const tabSwitchesRef = useRef(0);
+  const lastFocusLossRef = useRef(0);
   const [faceDetected, setFaceDetected] = useState(true);
   const [showWarning, setShowWarning] = useState(false);
   const [showPause, setShowPause] = useState(false);
@@ -232,10 +234,19 @@ export default function ExamPage() {
   };
 
   // ── Start Exam ──────────────────────────────────────────────────────────────
-  const startExam = () => {
+  const startExam = async () => {
     setStep('exam');
     setExamStarted(true);
     logEvent('info', 'Exam started — AI proctoring active');
+
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        logEvent('success', 'Entered fullscreen mode');
+      }
+    } catch {
+      logEvent('warning', 'Fullscreen permission denied. Please enable fullscreen manually.');
+    }
   };
 
   // ── Timer ───────────────────────────────────────────────────────────────────
@@ -281,36 +292,61 @@ export default function ExamPage() {
     } catch { /* ignore */ }
   }, [user]);
 
+
+  const recordTabSwitch = useCallback((source = 'tab') => {
+    const now = Date.now();
+    if (now - lastFocusLossRef.current < 1200) return;
+
+    lastFocusLossRef.current = now;
+    tabSwitchesRef.current += 1;
+    setTabSwitches(tabSwitchesRef.current);
+
+    addViolation('tab_switch');
+    logEvent('danger', source === 'blur' ? 'Window focus lost detected!' : 'Tab switch detected!');
+    showWarningBanner('⚠ Tab switch detected — stay on exam page');
+    sendBrowserEvent('tab_switch');
+  }, [sendBrowserEvent, showWarningBanner]);
+
   // ── Tab / visibility detection ──────────────────────────────────────────────
   useEffect(() => {
-    if (!examStarted) return;
+    if (!examStarted || examSubmitted) return;
+
     const onVisibility = () => {
       if (document.hidden) {
-        setTabSwitches(prev => prev + 1);
-        addViolation('tab_switch');
-        logEvent('danger', 'Tab switch detected!');
-        showWarningBanner('⚠ Tab switch detected — stay on exam page');
-        sendBrowserEvent('tab_switch');
+        recordTabSwitch('visibility');
       }
     };
+
+    const onBlur = () => {
+      if (!document.hidden) {
+        recordTabSwitch('blur');
+      }
+    };
+
     document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [examStarted, sendBrowserEvent, showWarningBanner]);
+    window.addEventListener('blur', onBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [examStarted, examSubmitted, recordTabSwitch]);
 
   // ── Fullscreen exit detection ───────────────────────────────────────────────
   useEffect(() => {
-    if (!examStarted) return;
+    if (!examStarted || examSubmitted) return;
+
     const onFullscreen = () => {
-      if (!document.fullscreenElement) {
+      if (!document.fullscreenElement && !examSubmitted) {
         addViolation('fullscreen_exit');
         logEvent('warning', 'Fullscreen exited');
         sendBrowserEvent('fullscreen_exit');
       }
     };
+
     document.addEventListener('fullscreenchange', onFullscreen);
     return () => document.removeEventListener('fullscreenchange', onFullscreen);
-  }, [examStarted, sendBrowserEvent]);
-
+  }, [examStarted, examSubmitted, sendBrowserEvent]);
   // ── Copy / Paste detection ──────────────────────────────────────────────────
   useEffect(() => {
     if (!examStarted) return;
@@ -477,7 +513,7 @@ export default function ExamPage() {
     };
   }, [examStarted, user]);
 
-  const addViolation = (type) => {
+  function addViolation(type) {
     violationTypesRef.current.push(type);
     setViolations(prev => {
       const next = prev + 1;
@@ -492,7 +528,7 @@ export default function ExamPage() {
       if (next >= 12) { setShowPause(false); setExamTerminated(true); handleSubmit(true); }
       return next;
     });
-  };
+  }
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async (terminated = false) => {
@@ -502,11 +538,19 @@ export default function ExamPage() {
     if (analysisRef.current) cancelAnimationFrame(analysisRef.current);
     viewerWsRef.current?.close();
 
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // ignore exit fullscreen errors
+      }
+    }
+
     const procData = {
       violations,
       total_violations: violations,
       violation_types: [...new Set(violationTypesRef.current)],
-      tab_switches: tabSwitches,
+      tab_switches: tabSwitchesRef.current,
       risk_level: riskLevel,
       risk_score: riskScore,
       events,
