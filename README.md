@@ -39,6 +39,12 @@ pip install -r requirements.txt
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
 MONGODB_URL=mongodb://localhost:27017/mindmesh
+
+# Optional: Groq (recommended for student/free-tier usage)
+# If GROQ_API_KEY is set, backend auto-prefers Groq in AI_PROVIDER=auto mode.
+AI_PROVIDER=auto
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.1-8b-instant
 ```
 
 ### 3. Frontend Setup (React + Vite)
