@@ -76,6 +76,7 @@ export default function ExamPage() {
   const [stdins, setStdins] = useState({});
   const [executionTimes, setExecutionTimes] = useState({});
   const [codingScores, setCodingScores] = useState({});
+  const [codingDrafts, setCodingDrafts] = useState({});
 
 
   // ── Proctoring state ────────────────────────────────────────────────────────
@@ -109,12 +110,74 @@ export default function ExamPage() {
     setEvents(prev => [{ type, msg, timeStr }, ...prev].slice(0, 50));
   };
 
+  const draftKey = (qId, language) => `${qId}:${language}`;
+
+  const buildStarterTemplate = useCallback((language, question) => {
+    if (question?.starter_code && (question.language || '').toLowerCase() === language) {
+      return question.starter_code;
+    }
+
+    const title = question?.title || 'Coding Challenge';
+    if (language === 'python') {
+      return `# ${title}\n# Read input and write your solution below\n`;
+    }
+    if (language === 'java') {
+      return [
+        'import java.util.*;',
+        '',
+        'public class Solution {',
+        '    public static void main(String[] args) {',
+        '        Scanner sc = new Scanner(System.in);',
+        '        // Write your solution below',
+        '    }',
+        '}',
+      ].join('\n');
+    }
+    if (language === 'c') {
+      return [
+        '#include <stdio.h>',
+        '',
+        'int main() {',
+        '    // Write your solution below',
+        '    return 0;',
+        '}',
+      ].join('\n');
+    }
+    if (language === 'sql') {
+      return '-- Write your SQL query below\nSELECT 1;';
+    }
+    return question?.starter_code || '';
+  }, []);
+
+  const handleCodeChange = useCallback((qId, language, value) => {
+    const next = value ?? '';
+    setCodingSolutions(prev => ({ ...prev, [qId]: next }));
+    setCodingDrafts(prev => ({ ...prev, [draftKey(qId, language)]: next }));
+  }, []);
+
+  const handleLanguageChange = useCallback((question, nextLang) => {
+    if (!question?.id) return;
+
+    const qId = question.id;
+    const currentLang = activeLanguage[qId] ?? question.language ?? 'python';
+    const currentCode = codingSolutions[qId] ?? buildStarterTemplate(currentLang, question);
+    const nextDrafts = {
+      ...codingDrafts,
+      [draftKey(qId, currentLang)]: currentCode,
+    };
+    const nextCode = nextDrafts[draftKey(qId, nextLang)] ?? buildStarterTemplate(nextLang, question);
+
+    setCodingDrafts(nextDrafts);
+    setActiveLanguage(prev => ({ ...prev, [qId]: nextLang }));
+    setCodingSolutions(prev => ({ ...prev, [qId]: nextCode }));
+  }, [activeLanguage, buildStarterTemplate, codingDrafts, codingSolutions]);
+
   // ── Coding handlers ─────────────────────────────────────────────────────────
   const handleRunCode = async (qId) => {
     const q = questions[currentQ];
     if (q.type !== 'coding') return;
-    const code = codingSolutions[qId] ?? q.starter_code ?? '';
     const lang = activeLanguage[qId] ?? q.language ?? 'python';
+    const code = codingSolutions[qId] ?? buildStarterTemplate(lang, q);
     const input = stdins[qId] ?? '';
     
     setCodeRunning(true);
@@ -136,8 +199,8 @@ export default function ExamPage() {
   const handleSubmitCode = async (qId) => {
     const q = questions[currentQ];
     if (q.type !== 'coding') return;
-    const code = codingSolutions[qId] ?? q.starter_code ?? '';
     const lang = activeLanguage[qId] ?? q.language ?? 'python';
+    const code = codingSolutions[qId] ?? buildStarterTemplate(lang, q);
     
     setCodeRunning(true);
     setCodingOutputs(prev => ({...prev, [qId]: 'Submitting and running hidden tests...'}));
@@ -174,7 +237,18 @@ export default function ExamPage() {
   // ── Load questions ──────────────────────────────────────────────────────────
   useEffect(() => {
     examAPI.getQuestions()
-      .then(q => { setQuestions(q); setAnswers(new Array(q.length).fill(-1)); })
+      .then(q => {
+        setQuestions(q);
+        setAnswers(new Array(q.length).fill(-1));
+        setCurrentQ(0);
+        setCodingSolutions({});
+        setCodingOutputs({});
+        setActiveLanguage({});
+        setStdins({});
+        setExecutionTimes({});
+        setCodingScores({});
+        setCodingDrafts({});
+      })
       .catch(() => {});
   }, []);
 
@@ -585,6 +659,7 @@ export default function ExamPage() {
   const timerColor = timeLeft <= 60 ? 'var(--danger)' : timeLeft <= 180 ? 'var(--warning)' : 'var(--accent)';
   const letters = ['A', 'B', 'C', 'D'];
   const q = questions[currentQ];
+  const selectedCodingLanguage = q?.type === 'coding' ? (activeLanguage[q.id] ?? q.language ?? 'python') : 'python';
 
   // Risk level colour
   const riskColor = riskLevel === 'Cheating' ? 'var(--danger)' : riskLevel === 'High Risk' ? '#ff6b35' : riskLevel === 'Suspicious' ? 'var(--warning)' : 'var(--success)';
@@ -840,10 +915,10 @@ export default function ExamPage() {
                   />
                   <div className="coding-editor-panel">
                     <CodeEditor 
-                      code={codingSolutions[q.id] ?? q.starter_code ?? ''}
-                      setCode={(val) => setCodingSolutions(prev => ({...prev, [q.id]: val}))}
-                      language={activeLanguage[q.id] ?? q.language ?? 'python'}
-                      setLanguage={(val) => setActiveLanguage(prev => ({...prev, [q.id]: val}))}
+                      code={codingSolutions[q.id] ?? buildStarterTemplate(selectedCodingLanguage, q)}
+                      setCode={(val) => handleCodeChange(q.id, selectedCodingLanguage, val)}
+                      language={selectedCodingLanguage}
+                      setLanguage={(val) => handleLanguageChange(q, val)}
                       onRun={() => handleRunCode(q.id)}
                       running={codeRunning}
                       output={codingOutputs[q.id] ?? null}

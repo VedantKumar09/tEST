@@ -63,6 +63,21 @@ export default function AdminPage() {
   const riskColor = (r) => r === 'High' ? 'var(--danger)' : r === 'Medium' ? 'var(--warning)' : 'var(--success)';
   const riskBadge = (r) => r === 'High' ? 'badge-danger' : r === 'Medium' ? 'badge-warning' : 'badge-success';
 
+  const normalizeCategory = (data) => {
+    if (typeof data === 'number') {
+      const pct = Math.max(0, Math.min(100, Math.round(data)));
+      return { pct, label: `${pct}%` };
+    }
+
+    const total = Number(data?.total ?? 0);
+    const correct = Number(data?.correct ?? 0);
+    const pctFromPayload = data?.pct;
+    const pct = Number.isFinite(pctFromPayload)
+      ? Math.max(0, Math.min(100, Math.round(pctFromPayload)))
+      : (total > 0 ? Math.round((correct / total) * 100) : 0);
+    return { pct, label: `${correct}/${total}` };
+  };
+
   const filtered = submissions.filter(s =>
     s.student_name?.toLowerCase().includes(search.toLowerCase()) ||
     s.student_email?.toLowerCase().includes(search.toLowerCase())
@@ -276,15 +291,15 @@ export default function AdminPage() {
                                   <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>📈 Category Performance</p>
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                                     {Object.entries(sub.category_scores).map(([cat, data]) => {
-                                      const pct = data.total > 0 ? Math.round((data.correct / data.total) * 100) : 0;
+                                      const normalized = normalizeCategory(data);
                                       return (
                                         <div key={cat} className="glass-card" style={{ padding: 16 }}>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                                             <span style={{ fontSize: 13, fontWeight: 600 }}>{cat}</span>
-                                            <span style={{ fontSize: 13, color: gradeColor(pct) }}>{data.correct}/{data.total}</span>
+                                            <span style={{ fontSize: 13, color: gradeColor(normalized.pct) }}>{normalized.label}</span>
                                           </div>
                                           <div className="progress-bar">
-                                            <div className="progress-fill" style={{ width: `${pct}%`, background: gradeColor(pct) }} />
+                                            <div className="progress-fill" style={{ width: `${normalized.pct}%`, background: gradeColor(normalized.pct) }} />
                                           </div>
                                         </div>
                                       );

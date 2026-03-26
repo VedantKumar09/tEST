@@ -47,6 +47,20 @@ export default function ScorePage() {
   const violations = result.proctoring_summary?.total_violations ?? 0;
   const risk = riskLabel(violations);
 
+  const normalizeCategory = (data) => {
+    if (typeof data === 'number') {
+      return { pct: Math.max(0, Math.min(100, Math.round(data))), label: `${Math.round(data)}%` };
+    }
+
+    const total = Number(data?.total ?? 0);
+    const correct = Number(data?.correct ?? 0);
+    const pctFromPayload = data?.pct;
+    const pct = Number.isFinite(pctFromPayload)
+      ? Math.max(0, Math.min(100, Math.round(pctFromPayload)))
+      : (total > 0 ? Math.round((correct / total) * 100) : 0);
+    return { pct, label: `${correct}/${total} (${pct}%)` };
+  };
+
   return (
     <div className="score-page" style={{ maxWidth: 900, margin: '0 auto' }}>
       {/* Navbar */}
@@ -97,15 +111,15 @@ export default function ScorePage() {
         <div className="glass-card" style={{ padding: 28, marginBottom: 24 }}>
           <h3 style={{ marginBottom: 20, fontSize: 16 }}>📈 Category Performance</h3>
           {Object.entries(result.category_scores).map(([cat, data]) => {
-            const pct = data.total > 0 ? Math.round((data.correct / data.total) * 100) : 0;
+            const normalized = normalizeCategory(data);
             return (
               <div key={cat} style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                   <span style={{ fontSize: 14, fontWeight: 600 }}>{cat}</span>
-                  <span style={{ fontSize: 13, color: gradeColor(pct) }}>{data.correct}/{data.total} ({pct}%)</span>
+                  <span style={{ fontSize: 13, color: gradeColor(normalized.pct) }}>{normalized.label}</span>
                 </div>
                 <div className="progress-bar">
-                  <div className="progress-fill" style={{ width: `${pct}%`, background: gradeColor(pct) }} />
+                  <div className="progress-fill" style={{ width: `${normalized.pct}%`, background: gradeColor(normalized.pct) }} />
                 </div>
               </div>
             );

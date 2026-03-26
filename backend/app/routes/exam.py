@@ -194,5 +194,12 @@ def _category_scores(answers: list[int], mcq_questions: list[dict]) -> dict:
         cats[c]["total"] += 1
         if i < len(answers) and answers[i] == q["correct"]:
             cats[c]["correct"] += 1
-    return {c: round((v["correct"] / v["total"]) * 100) for c, v in cats.items()}
+    return {
+        c: {
+            "correct": v["correct"],
+            "total": v["total"],
+            "pct": round((v["correct"] / v["total"]) * 100) if v["total"] > 0 else 0,
+        }
+        for c, v in cats.items()
+    }
 
