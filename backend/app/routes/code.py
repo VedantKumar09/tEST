@@ -11,6 +11,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 from ..services.code_executor import execute_code, run_test_cases, SUPPORTED_LANGUAGES
+from ..database import get_db
 
 router = APIRouter(prefix="/api/code", tags=["code"])
 
@@ -165,6 +166,56 @@ CODING_QUESTIONS = {
 }
 
 
+async def _load_active_generated_coding_questions() -> dict[int, dict]:
+    db = get_db()
+    if db is None:
+        return {}
+
+    try:
+        doc = await db.exam_question_sets.find_one(
+            {"active": True},
+            {"_id": 0, "coding_questions": 1},
+            sort=[("created_at", -1)],
+        )
+    except Exception as e:
+        print(f"Failed to read generated coding questions: {e}")
+        return {}
+
+    generated = doc.get("coding_questions", []) if doc else []
+    if not isinstance(generated, list) or len(generated) == 0:
+        return {}
+
+    bank: dict[int, dict] = {}
+    for item in generated:
+        if not isinstance(item, dict):
+            continue
+        qid = item.get("id")
+        if not isinstance(qid, int):
+            continue
+        test_cases = item.get("test_cases", [])
+        if not isinstance(test_cases, list) or len(test_cases) == 0:
+            continue
+
+        bank[qid] = {
+            "id": qid,
+            "title": str(item.get("title", f"Generated Coding {qid}")),
+            "category": str(item.get("category", "Coding — Generated")),
+            "language": str(item.get("language", "python")),
+            "difficulty": str(item.get("difficulty", "Easy")),
+            "description": str(item.get("description", "Generated coding question")),
+            "starter_code": str(item.get("starter_code", "")),
+            "test_cases": test_cases,
+        }
+    return bank
+
+
+async def _get_coding_question_bank() -> dict[int, dict]:
+    generated = await _load_active_generated_coding_questions()
+    if generated:
+        return generated
+    return CODING_QUESTIONS
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/languages")
@@ -176,8 +227,9 @@ async def get_supported_languages():
 @router.get("/questions")
 async def get_coding_questions():
     """Return all coding questions (without hidden test cases)."""
+    bank = await _get_coding_question_bank()
     questions = []
-    for q in CODING_QUESTIONS.values():
+    for q in sorted(bank.values(), key=lambda x: x["id"]):
         questions.append({
             "id": q["id"],
             "title": q["title"],
@@ -193,7 +245,8 @@ async def get_coding_questions():
 @router.get("/questions/{question_id}")
 async def get_coding_question(question_id: int):
     """Return a single coding question (without hidden test cases)."""
-    q = CODING_QUESTIONS.get(question_id)
+    bank = await _get_coding_question_bank()
+    q = bank.get(question_id)
     if not q:
         return {"error": f"Question {question_id} not found"}
     return {
@@ -230,7 +283,8 @@ async def submit_code(body: SubmitRequest):
     Submit code for grading against hidden test cases.
     Returns pass/fail per test case + overall score.
     """
-    question = CODING_QUESTIONS.get(body.question_id)
+    bank = await _get_coding_question_bank()
+    question = bank.get(body.question_id)
     if not question:
         return {"error": f"Question {body.question_id} not found", "score": 0}
 

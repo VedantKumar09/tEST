@@ -14,13 +14,47 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [search, setSearch] = useState('');
+  const [genTopic, setGenTopic] = useState('Computer Science Fundamentals');
+  const [genLoading, setGenLoading] = useState(false);
+  const [genMessage, setGenMessage] = useState('');
+  const [activeQuestionSet, setActiveQuestionSet] = useState(null);
 
   useEffect(() => {
     adminAPI.getSubmissions()
       .then(data => setSubmissions(data))
       .catch(() => setSubmissions([]))
       .finally(() => setLoading(false));
+
+    adminAPI.getActiveQuestions()
+      .then(meta => setActiveQuestionSet(meta))
+      .catch(() => setActiveQuestionSet(null));
   }, []);
+
+  const handleGenerateQuestions = async () => {
+    setGenLoading(true);
+    setGenMessage('');
+    try {
+      const res = await adminAPI.generateQuestions({
+        topic: genTopic || 'Computer Science Fundamentals',
+        total_questions: 15,
+      });
+
+      const providerLabel = String(res.provider || 'openai').toUpperCase();
+      const modelLabel = res.model ? ` (${res.model})` : '';
+      const breakdown = (res.mcq_count !== undefined && res.coding_count !== undefined)
+        ? ` (${res.mcq_count} MCQ + ${res.coding_count} coding)`
+        : '';
+      const suffix = res.notice ? ` ${res.notice}` : '';
+      setGenMessage(`✅ Generated ${res.count} questions${breakdown} using ${providerLabel}${modelLabel}. New exams will use this set.${suffix}`);
+      const meta = await adminAPI.getActiveQuestions();
+      setActiveQuestionSet(meta);
+    } catch (err) {
+      const message = err?.response?.data?.detail || err?.message || 'Question generation failed';
+      setGenMessage(`❌ ${message}`);
+    } finally {
+      setGenLoading(false);
+    }
+  };
 
   const fmt = (s) => `${Math.floor(s / 60)}m ${s % 60}s`;
   const fmtDate = (iso) => iso ? new Date(iso).toLocaleString() : '—';
@@ -63,6 +97,51 @@ export default function AdminPage() {
         <div className="admin-header">
           <h1>🛡️ Proctoring Dashboard</h1>
           <p>Exam results and AI proctoring reports for all students</p>
+        </div>
+
+        <div className="glass-card" style={{ padding: 16, marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 16 }}>🧩 Generate Exam Questions (OpenAI)</h3>
+              <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+                Generates a new 15-MCQ set and makes it active for upcoming exams.
+              </p>
+            </div>
+            <span className="badge badge-info">Provider: OpenAI only</span>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+            <input
+              className="form-input"
+              value={genTopic}
+              onChange={(e) => setGenTopic(e.target.value)}
+              placeholder="Topic (e.g., Data Structures & Algorithms)"
+              style={{ minWidth: 260, flex: 1 }}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={handleGenerateQuestions}
+              disabled={genLoading}
+            >
+              {genLoading ? '⏳ Generating...' : '✨ Generate 15 Questions'}
+            </button>
+          </div>
+
+          {genMessage && (
+            <div style={{ marginTop: 10, fontSize: 12, color: genMessage.startsWith('✅') ? 'var(--success)' : 'var(--danger)' }}>
+              {genMessage}
+            </div>
+          )}
+
+          {activeQuestionSet?.active && (
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-secondary)' }}>
+              Active set: <strong>{activeQuestionSet.count}</strong> questions
+              {activeQuestionSet.mcq_count !== undefined && activeQuestionSet.coding_count !== undefined
+                ? <> (<strong>{activeQuestionSet.mcq_count}</strong> MCQ + <strong>{activeQuestionSet.coding_count}</strong> coding)</>
+                : null}
+              {' '}· topic <strong>{activeQuestionSet.topic}</strong> · model <strong>{activeQuestionSet.model}</strong>
+            </div>
+          )}
         </div>
 
         {/* Summary Stats */}

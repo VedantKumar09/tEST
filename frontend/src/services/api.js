@@ -46,6 +46,8 @@ export const adminAPI = {
   getSubmissions: () => api.get('/api/admin/submissions').then(r => r.data),
   getSubmission: (id) => api.get(`/api/admin/submissions/${id}`).then(r => r.data),
   getProctorLogs: () => api.get('/api/admin/proctor-logs').then(r => r.data),
+  generateQuestions: (payload) => api.post('/api/admin/questions/generate', payload).then(r => r.data),
+  getActiveQuestions: () => api.get('/api/admin/questions/active').then(r => r.data),
 };
 
 // ── Code Execution ───────────────────────────────────────────────────────────

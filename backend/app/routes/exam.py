@@ -59,10 +59,50 @@ class SubmitRequest(BaseModel):
     time_used: int
     proctoring_data: Optional[dict] = None
 
+
+async def _load_mcq_questions() -> list[dict]:
+    db = get_db()
+    if db is None:
+        return MCQ_QUESTIONS
+
+    try:
+        doc = await db.exam_question_sets.find_one(
+            {"active": True},
+            {"_id": 0, "mcq_questions": 1},
+            sort=[("created_at", -1)],
+        )
+        if doc and isinstance(doc.get("mcq_questions"), list) and len(doc["mcq_questions"]) > 0:
+            return doc["mcq_questions"]
+    except Exception as e:
+        print(f"Failed to load active generated questions: {e}")
+
+    return MCQ_QUESTIONS
+
+
+async def _load_coding_questions() -> list[dict]:
+    db = get_db()
+    if db is None:
+        return CODING_QUESTION_REFS
+
+    try:
+        doc = await db.exam_question_sets.find_one(
+            {"active": True},
+            {"_id": 0, "coding_questions": 1},
+            sort=[("created_at", -1)],
+        )
+        if doc and isinstance(doc.get("coding_questions"), list) and len(doc["coding_questions"]) > 0:
+            return doc["coding_questions"]
+    except Exception as e:
+        print(f"Failed to load active generated coding questions: {e}")
+
+    return CODING_QUESTION_REFS
+
 @router.get("/questions")
 async def get_questions():
+    mcq_questions = await _load_mcq_questions()
+    coding_questions = await _load_coding_questions()
     result = []
-    for q in MCQ_QUESTIONS:
+    for q in mcq_questions:
         result.append({
             "id": q["id"],
             "type": "mcq",
@@ -70,7 +110,7 @@ async def get_questions():
             "text": q["text"],
             "options": q["options"],
         })
-    for q in CODING_QUESTION_REFS:
+    for q in coding_questions:
         result.append({
             "id": q["id"],
             "type": "coding",
@@ -78,22 +118,27 @@ async def get_questions():
             "title": q["title"],
             "language": q["language"],
             "difficulty": q["difficulty"],
+            "description": q.get("description"),
+            "starter_code": q.get("starter_code"),
         })
     return result
 
 @router.post("/submit")
 async def submit_exam(body: SubmitRequest):
+    mcq_questions = await _load_mcq_questions()
+    coding_questions = await _load_coding_questions()
+
     # MCQ Score
     correct = sum(
         1 for i, ans in enumerate(body.answers)
-        if i < len(MCQ_QUESTIONS) and ans == MCQ_QUESTIONS[i]["correct"]
+        if i < len(mcq_questions) and ans == mcq_questions[i]["correct"]
     )
-    mcq_total = len(MCQ_QUESTIONS)
+    mcq_total = len(mcq_questions)
     mcq_score = round((correct / mcq_total) * 100) if mcq_total > 0 else 0
 
     # Coding Score
     coding_scores = body.coding_scores or {}
-    coding_total_questions = len(CODING_QUESTION_REFS)
+    coding_total_questions = len(coding_questions)
     coding_score = 0
     if coding_scores:
         coding_score = round(sum(coding_scores.values()) / coding_total_questions)
@@ -122,7 +167,7 @@ async def submit_exam(body: SubmitRequest):
         "questions_total": mcq_total + coding_total_questions,
         "questions_answered": sum(1 for a in body.answers if a != -1) + len(coding_scores),
         "time_used": body.time_used,
-        "category_scores": _category_scores(body.answers),
+        "category_scores": _category_scores(body.answers, mcq_questions),
         "proctoring_summary": body.proctoring_data,
         "ai_supervisor": agent_report,
     }
@@ -140,9 +185,9 @@ async def submit_exam(body: SubmitRequest):
 
     return result
 
-def _category_scores(answers: list[int]) -> dict:
+def _category_scores(answers: list[int], mcq_questions: list[dict]) -> dict:
     cats: dict[str, dict] = {}
-    for i, q in enumerate(MCQ_QUESTIONS):
+    for i, q in enumerate(mcq_questions):
         c = q["category"]
         if c not in cats:
             cats[c] = {"correct": 0, "total": 0}
