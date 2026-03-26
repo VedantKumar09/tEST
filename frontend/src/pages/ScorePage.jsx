@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { normalizeCategoryMetrics } from '../utils/categoryScores';
 
 export default function ScorePage() {
   const { user, logout } = useAuth();
@@ -46,20 +47,6 @@ export default function ScorePage() {
 
   const violations = result.proctoring_summary?.total_violations ?? 0;
   const risk = riskLabel(violations);
-
-  const normalizeCategory = (data) => {
-    if (typeof data === 'number') {
-      return { pct: Math.max(0, Math.min(100, Math.round(data))), label: `${Math.round(data)}%` };
-    }
-
-    const total = Number(data?.total ?? 0);
-    const correct = Number(data?.correct ?? 0);
-    const pctFromPayload = data?.pct;
-    const pct = Number.isFinite(pctFromPayload)
-      ? Math.max(0, Math.min(100, Math.round(pctFromPayload)))
-      : (total > 0 ? Math.round((correct / total) * 100) : 0);
-    return { pct, label: `${correct}/${total} (${pct}%)` };
-  };
 
   return (
     <div className="score-page" style={{ maxWidth: 900, margin: '0 auto' }}>
@@ -111,7 +98,7 @@ export default function ScorePage() {
         <div className="glass-card" style={{ padding: 28, marginBottom: 24 }}>
           <h3 style={{ marginBottom: 20, fontSize: 16 }}>📈 Category Performance</h3>
           {Object.entries(result.category_scores).map(([cat, data]) => {
-            const normalized = normalizeCategory(data);
+            const normalized = normalizeCategoryMetrics(data);
             return (
               <div key={cat} style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>

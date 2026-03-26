@@ -2,10 +2,10 @@
  * Admin Page — View all student submissions + proctoring data
  */
 import React, { useState, useEffect } from 'react';
-
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { adminAPI } from '../services/api';
+import { normalizeCategoryMetrics } from '../utils/categoryScores';
 
 export default function AdminPage() {
   const { user, logout } = useAuth();
@@ -62,21 +62,6 @@ export default function AdminPage() {
   const gradeColor = (s) => s >= 80 ? 'var(--success)' : s >= 50 ? 'var(--warning)' : 'var(--danger)';
   const riskColor = (r) => r === 'High' ? 'var(--danger)' : r === 'Medium' ? 'var(--warning)' : 'var(--success)';
   const riskBadge = (r) => r === 'High' ? 'badge-danger' : r === 'Medium' ? 'badge-warning' : 'badge-success';
-
-  const normalizeCategory = (data) => {
-    if (typeof data === 'number') {
-      const pct = Math.max(0, Math.min(100, Math.round(data)));
-      return { pct, label: `${pct}%` };
-    }
-
-    const total = Number(data?.total ?? 0);
-    const correct = Number(data?.correct ?? 0);
-    const pctFromPayload = data?.pct;
-    const pct = Number.isFinite(pctFromPayload)
-      ? Math.max(0, Math.min(100, Math.round(pctFromPayload)))
-      : (total > 0 ? Math.round((correct / total) * 100) : 0);
-    return { pct, label: `${correct}/${total}` };
-  };
 
   const filtered = submissions.filter(s =>
     s.student_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -291,7 +276,7 @@ export default function AdminPage() {
                                   <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>📈 Category Performance</p>
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                                     {Object.entries(sub.category_scores).map(([cat, data]) => {
-                                      const normalized = normalizeCategory(data);
+                                      const normalized = normalizeCategoryMetrics(data);
                                       return (
                                         <div key={cat} className="glass-card" style={{ padding: 16 }}>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>

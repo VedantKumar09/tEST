@@ -1,16 +1,4 @@
-﻿/**
- * Exam Page — Main exam interface
- * Left: Primary webcam (server-side AI analysis every 2s) + Secondary phone cam feed
- * Right: MCQ questions + timer
- * Setup flow: Camera → Identity → QR Cam → Exam
- *
- * Enhanced proctoring:
- *  - Real-time warning overlays (no face, looking away, multiple people, objects)
- *  - Cumulative risk score + risk level from backend scoring engine
- *  - Head pose + eye gaze attention indicators
- *  - Browser monitoring (tab switch, fullscreen exit, copy/paste, right click)
- */
-import { useState, useEffect, useRef, useCallback } from 'react';
+﻿import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
@@ -77,7 +65,6 @@ export default function ExamPage() {
   const [faceDetected, setFaceDetected] = useState(true);
   const [showWarning, setShowWarning] = useState(false);
   const [showPause, setShowPause] = useState(false);
-  const [examTerminated, setExamTerminated] = useState(false);
   const violationTypesRef = useRef([]);
   const [warningBanners, setWarningBanners] = useState([]); // active warning messages
   const [riskScore, setRiskScore] = useState(0);
@@ -89,7 +76,6 @@ export default function ExamPage() {
   const timerRef = useRef(null);
   const analysisRef = useRef(null);
   const viewerWsRef = useRef(null);
-  const warningTimeoutRef = useRef(null);
 
   const logEvent = (type, msg) => {
     const now = new Date();
@@ -555,7 +541,7 @@ export default function ExamPage() {
 
       if (next === 5) setShowWarning(true);
       if (next === 8) { setShowWarning(false); setShowPause(true); }
-      if (next >= 12) { setShowPause(false); setExamTerminated(true); handleSubmit(true); }
+      if (next >= 12) { setShowPause(false); handleSubmit(true); }
       return next;
     });
   }

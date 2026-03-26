@@ -1,7 +1,7 @@
 """
 Exam Routes — Questions and submission
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
 import time
@@ -50,8 +50,6 @@ CODING_QUESTION_REFS = [
     {"id": 104, "type": "coding", "category": "Coding — Java", "title": "Hello Java", "language": "java", "difficulty": "Easy"},
     {"id": 105, "type": "coding", "category": "Coding — SQL", "title": "Employee Query", "language": "sql", "difficulty": "Easy"},
 ]
-
-ALL_QUESTIONS = MCQ_QUESTIONS + CODING_QUESTION_REFS
 
 class SubmitRequest(BaseModel):
     answers: list[int]

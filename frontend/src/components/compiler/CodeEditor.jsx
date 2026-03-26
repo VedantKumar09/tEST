@@ -9,8 +9,8 @@ const CodeEditor = ({ code, setCode, language, setLanguage, onRun, running, outp
           <select 
             value={language} 
             onChange={(e) => setLanguage(e.target.value)}
-            className="form-input"
-            style={{ padding: '4px 8px', fontSize: '12px', width: 'auto' }}
+            className="form-input code-language-select"
+            style={{ width: 'auto' }}
           >
             <option value="python">Python</option>
             <option value="c">C</option>
