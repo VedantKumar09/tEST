@@ -1,87 +1,155 @@
-# 🧠 MindMesh v2 — AI-Powered Assessment & Proctoring Platform
+# MindMesh v2 - AI Assessment and Proctoring Platform
 
-MindMesh v2 is a modern, high-performance platform for online assessments. It features a **Hybrid Agentic AI Architecture** that combines local browser-based real-time tracking with backend Generative AI reasoning.
+MindMesh v2 is an online assessment platform with live proctoring, coding evaluation, and AI-assisted admin workflows.
 
-## ✨ Features
-- **Real-Time Proctoring (30-60 FPS)**: Uses WebAssembly (MediaPipe) to track face landmarks, head-pose, and eye gaze directly in the browser with **zero network latency**.
-- **Native Object Detection**: In-browser detection for unauthorized devices (phones, tablets, books) using Google's EfficientDet-Lite2.
-- **Agentic AI Supervisor**: Uses **Google Gemini 1.5 Pro** to analyze behavioral telemetry logs and generate intelligent, human-like proctoring reports.
-- **Integrated Code Executor**: Multi-language support (Python, C, Java, SQL) with a Monaco-based development environment.
-- **Secure Exam Mode**: Built-in protection against copy-pasting, tab-switching, and unauthorized terminal/right-click access.
+This project now supports dynamic exam generation (MCQ + coding), active question-set publishing, enhanced proctor event handling, and robust fallback behavior when model quotas are exhausted.
 
----
+## What Is New
 
-## 🛠️ Prerequisites
-- **Python 3.12+**
-- **Node.js LTS** (v24+)
-- **MongoDB** (v8.2+) — Must be running on `localhost:27017`
-- **Gemini API Key** — Required for the Agentic Supervisor logic
+### 1) AI-Generated Question Sets (Admin)
+- Admin can generate a complete exam set from the dashboard.
+- Each generated set includes:
+	- MCQ questions (default 15)
+	- Coding questions (default 5)
+- New sets are saved in MongoDB as the active set and immediately used for upcoming exams.
+- Admin dashboard now shows active-set metadata:
+	- Provider/model
+	- Topic
+	- MCQ count and coding count
 
----
+### 2) Coding Questions Improved to Challenge Style
+- Generated coding questions are now written in a challenge format similar to competitive coding platforms.
+- Coding prompts now include structured sections such as:
+	- Problem Statement
+	- Input Format
+	- Constraints
+	- Output Format
+	- Sample Input/Output
+- Coding items include starter code and hidden test cases for scoring.
 
-## 🚀 Installation & Setup
+### 3) Active Set Consumption Across Exam and Code Routes
+- Exam delivery now reads both MCQ and coding from the active generated set.
+- Code question listing, detail fetch, and code submission all resolve against the active coding set.
+- If no active generated set exists, the system safely falls back to built-in static questions.
 
-### 1. Database Setup
-Ensure MongoDB is running locally. You can start it pointing to a local directory:
+### 4) AI Reliability and Fallback Behavior
+- Admin generation is AI-first.
+- If OpenAI key is out of quota, generation falls back to a local rule-based bank so exams are not blocked.
+- API responses now include clearer error and notice messages (for example insufficient_quota details).
+
+### 5) Proctoring and Exam UX Stability Improvements
+- Improved tab-switch detection and fullscreen exit handling.
+- Fullscreen entry on exam start, and lifecycle cleanup improvements.
+- Better mapping/handling of proctoring payload fields for consistent scoring and reporting.
+- MediaPipe initialization and fallback paths improved for better camera robustness.
+
+## Core Features
+- Real-time browser-side proctoring using MediaPipe (face landmarks, head pose, gaze signals)
+- Browser event monitoring (tab switch, copy/paste, right click, fullscreen exit)
+- Secondary camera support via QR flow (phone-to-viewer WebSocket relay)
+- Agentic supervisor reasoning report at submission time
+- Integrated coding executor for Python, C, Java, and SQL
+- Admin dashboard for submissions, risk review, and question generation
+
+## Tech Stack
+- Backend: FastAPI, Motor (MongoDB), Pydantic settings
+- Frontend: React + Vite + Monaco editor
+- Database: MongoDB
+- AI providers in project config: OpenAI, Groq, Gemini (provider usage depends on route logic)
+
+## Prerequisites
+- Python 3.11+
+- Node.js LTS
+- MongoDB running locally on localhost:27017
+
+## Setup
+
+### 1) Start MongoDB
 ```powershell
 New-Item -ItemType Directory -Force -Path data\db
 Start-Process mongod -ArgumentList "--dbpath `"$PWD\data\db`" --port 27017" -WindowStyle Hidden
 ```
 
-### 2. Backend Setup (FastAPI)
+### 2) Backend
 ```powershell
 cd backend
 python -m venv venv
 .\venv\Scripts\activate
 pip install -r requirements.txt
 ```
-**Important**: Create a `.env` file in the `backend/` folder and add your Gemini key:
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-MONGODB_URL=mongodb://localhost:27017/mindmesh
 
-# Optional: Groq (recommended for student/free-tier usage)
-# If GROQ_API_KEY is set, backend auto-prefers Groq in AI_PROVIDER=auto mode.
-AI_PROVIDER=auto
+Create backend/.env:
+```env
+MONGODB_URL=mongodb://localhost:27017/mindmesh
+DATABASE_NAME=mindmesh
+
+# Provider config used by AI supervisor path
+AI_PROVIDER=groq
 GROQ_API_KEY=your_groq_api_key_here
 GROQ_MODEL=llama-3.1-8b-instant
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.0-flash
+
+# Used by admin question-generation path
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-4o-mini
 ```
 
-### 3. Frontend Setup (React + Vite)
+### 3) Frontend
 ```powershell
 cd frontend
 npm install --legacy-peer-deps
 ```
 
----
+## Run
 
-## 🏃 Running the Application
-
-### Terminal 1: Backend
+### Backend
 ```powershell
 cd backend
 .\venv\Scripts\activate
 uvicorn app.main:app --reload --port 8000
 ```
 
-### Terminal 2: Frontend
+### Frontend
 ```powershell
 cd frontend
 npm run dev
 ```
-**Note**: The frontend uses HTTPS. Accept the self-signed certificate in your browser (Advanced -> Proceed to localhost) to allow camera access.
 
----
+If PowerShell blocks npm scripts due execution policy, run Vite directly:
+```powershell
+cd frontend
+node node_modules/vite/bin/vite.js
+```
 
-## 🛡️ Proctoring Architecture
-- **Perception (Frontend)**: Real-time face tracking and object detection happens locally on the student's machine. Zero image data is sent over the network during the exam.
-- **Reasoning (Backend)**: When the exam is submitted, the backend feeds the behavioral "events log" to the Gemini-based **Agentic Supervisor**. It contextually evaluates if the student's behavior (e.g., looking away) was suspicious or part of normal coding flow.
-- **Reporting (Admin)**: Instructors view a synthesized AI report in the dashboard with a "Cheating Probability" and detailed reasoning.
+The frontend runs on HTTPS. Accept the local certificate in the browser so camera APIs can work.
 
----
+## Important Endpoints
 
-## 🛑 Stopping
-Press `Ctrl + C` in both terminals. To stop MongoDB:
+### Admin Generation
+- POST /api/admin/questions/generate
+- GET /api/admin/questions/active
+
+### Exam
+- GET /api/exam/questions
+- POST /api/exam/submit
+
+### Code
+- GET /api/code/questions
+- GET /api/code/questions/{question_id}
+- POST /api/code/execute
+- POST /api/code/submit
+
+## Operational Notes
+- Generation publishes a single active set at a time; previous active sets are deactivated.
+- Generated coding questions use IDs in the generated range and are fully gradable through hidden test cases.
+- If database is unavailable, write operations for generated sets cannot proceed.
+
+## Stop Services
+
+Press Ctrl+C in backend/frontend terminals.
+
+Stop MongoDB if needed:
 ```powershell
 Stop-Process -Name mongod -Force
 ```
