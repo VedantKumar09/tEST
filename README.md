@@ -153,3 +153,11 @@ Stop MongoDB if needed:
 ```powershell
 Stop-Process -Name mongod -Force
 ```
+
+## Documentation
+
+For comprehensive analysis of the system architecture and use cases:
+
+- **[USE_CASE_ANALYSIS.md](USE_CASE_ANALYSIS.md)** - Detailed analysis of all 18 implemented use cases, system workflows, and technical implementation details
+- **[USE_CASE_DIAGRAM.md](USE_CASE_DIAGRAM.md)** - Visual use case diagrams, sequence diagrams, and system architecture maps
+- **[PROJECT_USE_CASE_ALIGNMENT.md](PROJECT_USE_CASE_ALIGNMENT.md)** - Comparison with standard e-learning platforms, showing where MindMesh v2 exceeds or differs from typical systems
