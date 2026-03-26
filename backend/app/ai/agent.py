@@ -159,10 +159,13 @@ def generate_supervisor_report(events, violations, coding_scores, exam_duration,
 
     prompt = _build_supervisor_prompt(events, violations, coding_scores, exam_duration)
 
-    # 🚨 3. Only ONE provider (no spam)
+    # 🚨 3. Groq primary with Gemini fallback
     try:
         if PROVIDER == "groq":
-            result = _run_groq(prompt)
+            try:
+                result = _run_groq(prompt)
+            except Exception as groq_error:
+                result = _run_gemini(prompt)
         elif PROVIDER == "gemini":
             result = _run_gemini(prompt)
         else:
@@ -177,6 +180,6 @@ def generate_supervisor_report(events, violations, coding_scores, exam_duration,
     except Exception as e:
         return {
             "probability_cheating": "Error",
-            "reasoning": f"{PROVIDER.upper()} API failed: {str(e)}",
+            "reasoning": f"{PROVIDER.upper()} API failed and fallback did not succeed: {str(e)}",
             "recommended_action": "Manual Review Required"
         }
