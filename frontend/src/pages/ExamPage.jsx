@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Exam Page — Main exam interface
  * Left: Primary webcam (server-side AI analysis every 2s) + Secondary phone cam feed
  * Right: MCQ questions + timer
@@ -43,11 +43,7 @@ const ANALYSIS_INTERVAL_MS = 2000; // send frame every 2000ms for stable detecti
 export default function ExamPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-
-  // ── Setup flow ──────────────────────────────────────────────────────────────
   const [step, setStep] = useState('camera'); // camera | identity | qr | exam
-
-  // ── Camera ──────────────────────────────────────────────────────────────────
   const primaryVideoRef = useRef(null);
   const streamRef = useRef(null);
   const [cameraOn, setCameraOn] = useState(false);
@@ -58,8 +54,6 @@ export default function ExamPage() {
   const [secondCamUrl, setSecondCamUrl] = useState('');
   const [secondCamFrame, setSecondCamFrame] = useState(null);
   const [secondCamConnected, setSecondCamConnected] = useState(false);
-
-  // ── Exam state ──────────────────────────────────────────────────────────────
   const [questions, setQuestions] = useState(FALLBACK_QUESTIONS);
   const [answers, setAnswers] = useState(new Array(FALLBACK_QUESTIONS.length).fill(-1));
   const [currentQ, setCurrentQ] = useState(0);
@@ -67,8 +61,6 @@ export default function ExamPage() {
   const [examStarted, setExamStarted] = useState(false);
   const [examSubmitted, setExamSubmitted] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-
-  // ── Coding state ────────────────────────────────────────────────────────────
   const [codingSolutions, setCodingSolutions] = useState({});
   const [codingOutputs, setCodingOutputs] = useState({});
   const [activeLanguage, setActiveLanguage] = useState({});
@@ -77,9 +69,6 @@ export default function ExamPage() {
   const [executionTimes, setExecutionTimes] = useState({});
   const [codingScores, setCodingScores] = useState({});
   const [codingDrafts, setCodingDrafts] = useState({});
-
-
-  // ── Proctoring state ────────────────────────────────────────────────────────
   const [violations, setViolations] = useState(0);
   const [events, setEvents] = useState([]);
   const [tabSwitches, setTabSwitches] = useState(0);
@@ -90,8 +79,6 @@ export default function ExamPage() {
   const [showPause, setShowPause] = useState(false);
   const [examTerminated, setExamTerminated] = useState(false);
   const violationTypesRef = useRef([]);
-
-  // ── Enhanced proctoring state ───────────────────────────────────────────────
   const [warningBanners, setWarningBanners] = useState([]); // active warning messages
   const [riskScore, setRiskScore] = useState(0);
   const [riskLevel, setRiskLevel] = useState('Safe');
@@ -171,8 +158,6 @@ export default function ExamPage() {
     setActiveLanguage(prev => ({ ...prev, [qId]: nextLang }));
     setCodingSolutions(prev => ({ ...prev, [qId]: nextCode }));
   }, [activeLanguage, buildStarterTemplate, codingDrafts, codingSolutions]);
-
-  // ── Coding handlers ─────────────────────────────────────────────────────────
   const handleRunCode = async (qId) => {
     const q = questions[currentQ];
     if (q.type !== 'coding') return;
@@ -232,9 +217,6 @@ export default function ExamPage() {
       setCodeRunning(false);
     }
   };
-
-
-  // ── Load questions ──────────────────────────────────────────────────────────
   useEffect(() => {
     examAPI.getQuestions()
       .then(q => {
@@ -251,8 +233,6 @@ export default function ExamPage() {
       })
       .catch(() => {});
   }, []);
-
-  // ── Build second camera URL ─────────────────────────────────────────────────
   useEffect(() => {
     const sid = encodeURIComponent(user?.email || 'anonymous');
     const buildUrl = async () => {
@@ -263,15 +243,13 @@ export default function ExamPage() {
           const res = await fetch('/api/network/lan-ip');
           const data = await res.json();
           if (data.ip) host = data.ip;
-        } catch { /* keep localhost */ }
+        } catch {}
       }
       const lanBase = `https://${host}:${port}`;
       setSecondCamUrl(`${lanBase}/qr-camera?sid=${sid}`);
     };
     buildUrl();
   }, [user]);
-
-  // ── Primary camera init ─────────────────────────────────────────────────────
   const startCamera = async () => {
     setCameraError('');
     try {
@@ -306,8 +284,6 @@ export default function ExamPage() {
     setIdentityPhoto(canvas.toDataURL('image/jpeg', 0.8));
     logEvent('success', 'Identity photo captured');
   };
-
-  // ── Start Exam ──────────────────────────────────────────────────────────────
   const startExam = async () => {
     setStep('exam');
     setExamStarted(true);
@@ -322,8 +298,6 @@ export default function ExamPage() {
       logEvent('warning', 'Fullscreen permission denied. Please enable fullscreen manually.');
     }
   };
-
-  // ── Timer ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!examStarted || examSubmitted) return;
     timerRef.current = setInterval(() => {
@@ -334,8 +308,6 @@ export default function ExamPage() {
     }, 1000);
     return () => clearInterval(timerRef.current);
   }, [examStarted, examSubmitted]);
-
-  // ── Warning banner helper ───────────────────────────────────────────────────
   const showWarningBanner = useCallback((msg) => {
     setWarningBanners(prev => {
       if (prev.includes(msg)) return prev;
@@ -346,15 +318,11 @@ export default function ExamPage() {
       setWarningBanners(prev => prev.filter(m => m !== msg));
     }, 4000);
   }, []);
-
-  // ── Compute attention status from head pose + eye gaze ──────────────────────
   const computeAttention = useCallback((hp, eg) => {
     if (hp.looking_away && eg.looking_offscreen) return 'Away';
     if (hp.looking_away || eg.looking_offscreen) return 'Distracted';
     return 'Focused';
   }, []);
-
-  // ── Send browser events to backend ──────────────────────────────────────────
   const sendBrowserEvent = useCallback(async (eventType) => {
     if (!user?.email) return;
     try {
@@ -363,9 +331,8 @@ export default function ExamPage() {
         setRiskScore(res.score.cumulative_score || 0);
         setRiskLevel(res.score.risk_level || 'Safe');
       }
-    } catch { /* ignore */ }
+    } catch {}
   }, [user]);
-
 
   const recordTabSwitch = useCallback((source = 'tab') => {
     const now = Date.now();
@@ -380,8 +347,6 @@ export default function ExamPage() {
     showWarningBanner('⚠ Tab switch detected — stay on exam page');
     sendBrowserEvent('tab_switch');
   }, [sendBrowserEvent, showWarningBanner]);
-
-  // ── Tab / visibility detection ──────────────────────────────────────────────
   useEffect(() => {
     if (!examStarted || examSubmitted) return;
 
@@ -405,8 +370,6 @@ export default function ExamPage() {
       window.removeEventListener('blur', onBlur);
     };
   }, [examStarted, examSubmitted, recordTabSwitch]);
-
-  // ── Fullscreen exit detection ───────────────────────────────────────────────
   useEffect(() => {
     if (!examStarted || examSubmitted) return;
 
@@ -421,7 +384,6 @@ export default function ExamPage() {
     document.addEventListener('fullscreenchange', onFullscreen);
     return () => document.removeEventListener('fullscreenchange', onFullscreen);
   }, [examStarted, examSubmitted, sendBrowserEvent]);
-  // ── Copy / Paste detection ──────────────────────────────────────────────────
   useEffect(() => {
     if (!examStarted) return;
     const onCopy = (e) => {
@@ -440,8 +402,6 @@ export default function ExamPage() {
       document.removeEventListener('cut', onCopy);
     };
   }, [examStarted, sendBrowserEvent, showWarningBanner]);
-
-  // ── Right-click detection ───────────────────────────────────────────────────
   useEffect(() => {
     if (!examStarted) return;
     const onRightClick = (e) => {
@@ -453,8 +413,6 @@ export default function ExamPage() {
     document.addEventListener('contextmenu', onRightClick);
     return () => document.removeEventListener('contextmenu', onRightClick);
   }, [examStarted, sendBrowserEvent]);
-
-  // ── Client-side AI analysis via WebAssembly (Real-time 30FPS) ───────────────
   const faceLandmarkerRef = useRef(null);
   const objectDetectorRef = useRef(null);
   const lastVideoTimeRef = useRef(-1);
@@ -558,8 +516,6 @@ export default function ExamPage() {
       if (analysisRef.current) cancelAnimationFrame(analysisRef.current);
     };
   }, [examStarted, examSubmitted, computeAttention, showWarningBanner]);
-
-  // ── WebSocket receiver for secondary camera (30 FPS) ────────────────────────
   useEffect(() => {
     if (!examStarted || !user?.email) return;
     const sid = encodeURIComponent(user.email);
@@ -603,8 +559,6 @@ export default function ExamPage() {
       return next;
     });
   }
-
-  // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async (terminated = false) => {
     if (examSubmitted) return;
     setExamSubmitted(true);
@@ -666,13 +620,10 @@ export default function ExamPage() {
   // Attention colour
   const attColor = attentionStatus === 'Away' ? 'var(--danger)' : attentionStatus === 'Distracted' ? 'var(--warning)' : 'var(--success)';
   const attIcon = attentionStatus === 'Focused' ? '🎯' : attentionStatus === 'Distracted' ? '👀' : '🚫';
-
-  // ──────────────────────────────────────────────────────────────────────────
   // RENDER
-  // ──────────────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ── Navbar ── */}
+      
       <nav className="navbar">
         <div className="navbar-inner container">
           <span className="navbar-brand">🧠 MindMesh</span>
@@ -687,9 +638,9 @@ export default function ExamPage() {
         </div>
       </nav>
 
-      {/* ── SETUP OVERLAYS ── */}
+      
 
-      {/* Step 1: Camera */}
+      
       {step === 'camera' && (
         <div className="setup-overlay">
           <div className="setup-card">
@@ -708,7 +659,7 @@ export default function ExamPage() {
         </div>
       )}
 
-      {/* Step 2: Identity */}
+      
       {step === 'identity' && (
         <div className="setup-overlay">
           <div className="setup-card">
@@ -734,7 +685,7 @@ export default function ExamPage() {
         </div>
       )}
 
-      {/* Step 3: QR Code */}
+      
       {step === 'qr' && (
         <div className="setup-overlay">
           <div className="setup-card" style={{ maxWidth: 520 }}>
@@ -757,7 +708,7 @@ export default function ExamPage() {
         </div>
       )}
 
-      {/* ── PROCTORING OVERLAYS ── */}
+      
 
       {showWarning && (
         <div className="warn-overlay" style={{ pointerEvents: 'none' }}>
@@ -805,12 +756,12 @@ export default function ExamPage() {
         </div>
       )}
 
-      {/* ── MAIN EXAM LAYOUT ── */}
+      
       {step === 'exam' && (
         <div className="exam-layout">
-          {/* ── LEFT: Proctoring Panel ── */}
+          
           <aside className="proctor-panel">
-            {/* Primary webcam */}
+            
             <div style={{ position: 'relative' }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>Primary Camera</p>
               <div className="cam-box" style={{ borderColor: cameraOn ? 'var(--success)' : 'var(--border)' }}>
@@ -818,10 +769,9 @@ export default function ExamPage() {
                 <span className="cam-label">🎥 Primary</span>
                 <span className={`cam-status-dot ${cameraOn ? 'active' : ''}`} />
 
-                {/* ── Debug overlay — head pose & gaze ── */}
+                
 
-
-                {/* ── Real-time warning banners over camera ── */}
+                
                 {warningBanners.length > 0 && (
                   <div style={{
                     position: 'absolute', bottom: 28, left: 4, right: 4,
@@ -847,7 +797,7 @@ export default function ExamPage() {
               </div>
             </div>
 
-            {/* Secondary cam */}
+            
             <div>
               <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>
                 Secondary Camera <span className={`badge ${secondCamConnected ? 'badge-success' : 'badge-info'}`} style={{ marginLeft: 6 }}>{secondCamConnected ? 'Connected' : 'Waiting'}</span>
@@ -865,7 +815,7 @@ export default function ExamPage() {
               </div>
             </div>
 
-            {/* Stats — enhanced with risk score + attention */}
+            
             <div className="proctor-stats">
               {[
                 { val: violations, lbl: 'Violations', color: violations > 5 ? 'var(--danger)' : violations > 0 ? 'var(--warning)' : 'var(--success)' },
@@ -881,7 +831,7 @@ export default function ExamPage() {
               ))}
             </div>
 
-            {/* Event log */}
+            
             <div className="glass-card event-log">
               <h4>📋 Activity Log</h4>
               {events.length === 0
@@ -896,15 +846,15 @@ export default function ExamPage() {
             </div>
           </aside>
 
-          {/* ── RIGHT: Exam Panel ── */}
+          
           <main className="exam-panel">
-            {/* Header */}
+            
             <div className="exam-header">
               <h2>📝 Demo Assessment — {user?.name}</h2>
               <div className="timer" style={{ color: timerColor }}>{fmtTime(timeLeft)}</div>
             </div>
 
-            {/* Question or Coding area */}
+            
             <div className={q?.type === 'coding' ? "coding-area" : "question-area"} style={q?.type === 'coding' ? { padding: '24px', overflowY: 'auto' } : {}}>
               {q?.type === 'coding' ? (
                 <>
@@ -967,7 +917,7 @@ export default function ExamPage() {
               )}
             </div>
 
-            {/* Nav bar */}
+            
             <div className="question-nav">
               <div className="q-dots">
                 {questions.map((_, i) => (
@@ -996,3 +946,4 @@ export default function ExamPage() {
     </>
   );
 }
+

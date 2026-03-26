@@ -1,4 +1,4 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 
 // Use relative URLs — Vite proxy forwards /api/* to http://localhost:8000
 // This works for both PC (https://localhost:5173) and phone (https://<LAN-IP>:5173)
@@ -11,21 +11,15 @@ api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
-
-// ── Auth ─────────────────────────────────────────────────────────────────────
 export const authAPI = {
   login: (email, password, role) =>
     api.post('/api/auth/login', { email, password, role }).then(r => r.data),
   me: () => api.get('/api/auth/me').then(r => r.data),
 };
-
-// ── Exam ─────────────────────────────────────────────────────────────────────
 export const examAPI = {
   getQuestions: () => api.get('/api/exam/questions').then(r => r.data),
   submitExam: (payload) => api.post('/api/exam/submit', payload).then(r => r.data),
 };
-
-// ── Proctoring ───────────────────────────────────────────────────────────────
 export const proctoringAPI = {
   analyzeFrame: (image, student_id) =>
     api.post('/api/proctor/analyze', { image, student_id }).then(r => r.data),
@@ -40,8 +34,6 @@ export const proctoringAPI = {
   getSecondCamFrame: (student_id) =>
     api.get(`/api/proctor/second-cam/${student_id}`).then(r => r.data),
 };
-
-// ── Admin ─────────────────────────────────────────────────────────────────────
 export const adminAPI = {
   getSubmissions: () => api.get('/api/admin/submissions').then(r => r.data),
   getSubmission: (id) => api.get(`/api/admin/submissions/${id}`).then(r => r.data),
@@ -49,8 +41,6 @@ export const adminAPI = {
   generateQuestions: (payload) => api.post('/api/admin/questions/generate', payload).then(r => r.data),
   getActiveQuestions: () => api.get('/api/admin/questions/active').then(r => r.data),
 };
-
-// ── Code Execution ───────────────────────────────────────────────────────────
 export const codeAPI = {
   getLanguages: () => api.get('/api/code/languages').then(r => r.data),
   getQuestions: () => api.get('/api/code/questions').then(r => r.data),
@@ -59,3 +49,4 @@ export const codeAPI = {
   submit: (language, code, question_id) =>
     api.post('/api/code/submit', { language, code, question_id }).then(r => r.data),
 };
+

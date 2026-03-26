@@ -1,19 +1,12 @@
-import os
+﻿import os
 import json
 import time
 import requests
 from ..config import settings
-# =========================
-# CONFIG
-# =========================
 COOLDOWN_SECONDS = 20   # minimum gap between API calls
 LAST_CALL_TIME = 0
 
 PROVIDER = (settings.AI_PROVIDER or "groq").strip().lower()
-
-# =========================
-# PROMPT BUILDER (OPTIMIZED)
-# =========================
 def _build_supervisor_prompt(events, violations, coding_scores, exam_duration):
 
     # compress logs instead of full timeline
@@ -43,11 +36,6 @@ Return ONLY JSON:
 "recommended_action": "Pass" | "Review Timeline" | "Invalidate Exam"
 }}
 """
-
-
-# =========================
-# SAFE JSON PARSER
-# =========================
 def _parse_json_text(text):
     try:
         return json.loads(text.strip())
@@ -57,11 +45,6 @@ def _parse_json_text(text):
             "reasoning": "Invalid JSON from model",
             "recommended_action": "Manual Review Required"
         }
-
-
-# =========================
-# GEMINI (BEST FREE OPTION)
-# =========================
 def _run_gemini(prompt):
     api_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -92,11 +75,6 @@ def _run_gemini(prompt):
         return _parse_json_text(text)
 
     raise RuntimeError("Gemini rate limit exceeded")
-
-
-# =========================
-# GROQ
-# =========================
 def _run_groq(prompt):
     api_key = settings.GROQ_API_KEY or os.getenv("GROQ_API_KEY")
     if not api_key:
@@ -131,23 +109,14 @@ def _run_groq(prompt):
         return _parse_json_text(text)
 
     raise RuntimeError("Groq rate limit exceeded")
-
-
-# =========================
-# MAIN FUNCTION (SAFE)
-# =========================
 def generate_supervisor_report(events, violations, coding_scores, exam_duration, exam_finished=False):
     global LAST_CALL_TIME
-
-    # 🚨 1. Skip if not important
     if not exam_finished and violations < 3:
         return {
             "probability_cheating": "Low",
             "reasoning": "Insufficient suspicious activity for AI review.",
             "recommended_action": "Continue Monitoring"
         }
-
-    # 🚨 2. Cooldown protection
     if time.time() - LAST_CALL_TIME < COOLDOWN_SECONDS:
         return {
             "probability_cheating": "Skipped",
@@ -158,8 +127,6 @@ def generate_supervisor_report(events, violations, coding_scores, exam_duration,
     LAST_CALL_TIME = time.time()
 
     prompt = _build_supervisor_prompt(events, violations, coding_scores, exam_duration)
-
-    # 🚨 3. Groq primary with Gemini fallback
     try:
         if PROVIDER == "groq":
             try:
@@ -183,3 +150,4 @@ def generate_supervisor_report(events, violations, coding_scores, exam_duration,
             "reasoning": f"{PROVIDER.upper()} API failed and fallback did not succeed: {str(e)}",
             "recommended_action": "Manual Review Required"
         }
+

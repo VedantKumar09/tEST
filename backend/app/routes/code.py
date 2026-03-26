@@ -1,4 +1,4 @@
-"""
+﻿"""
 Code Execution Routes — Run and submit code for coding challenges.
 Endpoints:
   POST /api/code/execute  — run code with optional stdin
@@ -17,9 +17,6 @@ router = APIRouter(prefix="/api/code", tags=["code"])
 
 _executor = ThreadPoolExecutor(max_workers=3)
 
-
-# ── Request / Response Models ─────────────────────────────────────────────────
-
 class ExecuteRequest(BaseModel):
     language: str                     # python | c | java | sql
     code: str
@@ -34,9 +31,6 @@ class SubmitRequest(BaseModel):
 class TestCase(BaseModel):
     input: str = ""
     expected_output: str = ""
-
-
-# ── Coding Questions Bank ─────────────────────────────────────────────────────
 # Each question has hidden test cases used for grading.
 
 CODING_QUESTIONS = {
@@ -165,7 +159,6 @@ CODING_QUESTIONS = {
     },
 }
 
-
 async def _load_active_generated_coding_questions() -> dict[int, dict]:
     db = get_db()
     if db is None:
@@ -208,21 +201,16 @@ async def _load_active_generated_coding_questions() -> dict[int, dict]:
         }
     return bank
 
-
 async def _get_coding_question_bank() -> dict[int, dict]:
     generated = await _load_active_generated_coding_questions()
     if generated:
         return generated
     return CODING_QUESTIONS
 
-
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
 @router.get("/languages")
 async def get_supported_languages():
     """Return list of supported languages."""
     return {"languages": SUPPORTED_LANGUAGES}
-
 
 @router.get("/questions")
 async def get_coding_questions():
@@ -241,7 +229,6 @@ async def get_coding_questions():
         })
     return questions
 
-
 @router.get("/questions/{question_id}")
 async def get_coding_question(question_id: int):
     """Return a single coding question (without hidden test cases)."""
@@ -259,7 +246,6 @@ async def get_coding_question(question_id: int):
         "starter_code": q["starter_code"],
     }
 
-
 @router.post("/execute")
 async def execute_user_code(body: ExecuteRequest):
     """
@@ -275,7 +261,6 @@ async def execute_user_code(body: ExecuteRequest):
         body.stdin,
     )
     return result.to_dict()
-
 
 @router.post("/submit")
 async def submit_code(body: SubmitRequest):
@@ -299,3 +284,4 @@ async def submit_code(body: SubmitRequest):
         test_cases,
     )
     return result
+

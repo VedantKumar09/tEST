@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../services/api';
@@ -37,14 +37,14 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-container">
-        {/* Logo */}
+        
         <div className="login-logo">
           <div style={{ fontSize: '48px', marginBottom: '8px' }}>🧠</div>
           <h1>MindMesh</h1>
           <p>AI-Powered Assessment & Proctoring Platform</p>
         </div>
 
-        {/* Role selector */}
+        
         <div className="role-cards">
           <div
             className={`role-card ${role === 'student' ? 'active' : ''}`}
@@ -64,7 +64,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Login Form */}
+        
         <div className="glass-card login-card">
           <form className="login-form" onSubmit={handleLogin}>
             <div style={{ textAlign: 'center', marginBottom: '4px' }}>
@@ -118,3 +118,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

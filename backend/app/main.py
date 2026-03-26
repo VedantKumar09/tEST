@@ -1,4 +1,4 @@
-"""
+﻿"""
 MindMesh v2 — FastAPI Backend Entry Point
 """
 from contextlib import asynccontextmanager
@@ -10,13 +10,11 @@ from .routes import auth, exam, proctoring, admin, code
 # WebSocket relay state: student_id -> {"phone": ws, "viewer": ws}
 _ws_connections: dict[str, dict] = {}
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
     yield
     await close_db()
-
 
 app = FastAPI(
     title="MindMesh v2 API",
@@ -31,9 +29,6 @@ app.include_router(exam.router)
 app.include_router(proctoring.router)
 app.include_router(admin.router)
 app.include_router(code.router)
-
-
-# ── WebSocket Relay: Phone → PC viewer (30 FPS) ───────────────────────────────
 
 @app.websocket("/ws/phone/{student_id}")
 async def phone_camera_ws(websocket: WebSocket, student_id: str):
@@ -54,7 +49,6 @@ async def phone_camera_ws(websocket: WebSocket, student_id: str):
     except WebSocketDisconnect:
         _ws_connections.get(student_id, {}).pop("phone", None)
 
-
 @app.websocket("/ws/viewer/{student_id}")
 async def viewer_ws(websocket: WebSocket, student_id: str):
     """PC exam page receives relayed phone frames here."""
@@ -68,12 +62,10 @@ async def viewer_ws(websocket: WebSocket, student_id: str):
     except WebSocketDisconnect:
         _ws_connections.get(student_id, {}).pop("viewer", None)
 
-
 @app.get("/ws/status/{student_id}")
 async def ws_status(student_id: str):
     connected = student_id in _ws_connections and "phone" in _ws_connections[student_id]
     return {"connected": connected}
-
 
 @app.get("/api/network/lan-ip")
 async def lan_ip():
@@ -90,7 +82,7 @@ async def lan_ip():
         ip = "127.0.0.1"
     return {"ip": ip}
 
-
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "service": "MindMesh v2", "version": "2.0.0"}
+

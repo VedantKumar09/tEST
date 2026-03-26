@@ -1,4 +1,4 @@
-/**
+﻿/**
  * QR Camera Page — 30 FPS via WebSocket
  * Phone streams frames to backend /ws/phone/{sid} using requestAnimationFrame
  */
@@ -21,8 +21,6 @@ export default function QRCameraPage() {
 
   // Extract student_id from URL
   const getSid = () => new URLSearchParams(window.location.search).get('sid') || 'anonymous';
-
-  // ── WebSocket connection ─────────────────────────────────────────────────────
   const connectWS = () => {
     const sid = getSid();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -41,8 +39,6 @@ export default function QRCameraPage() {
     ws.onerror = () => setError('WebSocket error — retrying...');
     wsRef.current = ws;
   };
-
-  // ── Camera ───────────────────────────────────────────────────────────────────
   const startCamera = async (mode = facingMode) => {
     setError('');
     try {
@@ -67,8 +63,6 @@ export default function QRCameraPage() {
       setError(err.message.includes('HTTPS') ? err.message : 'Camera access denied. Allow camera permission and retry.');
     }
   };
-
-  // ── requestAnimationFrame frame sender ───────────────────────────────────────
   useEffect(() => {
     if (!streaming) return;
 
@@ -104,8 +98,6 @@ export default function QRCameraPage() {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, [streaming]);
-
-  // ── Cleanup ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -132,12 +124,12 @@ export default function QRCameraPage() {
 
         {error && <div className="alert alert-error" style={{ marginBottom: 16, fontSize: 12 }}>{error}</div>}
 
-        {/* Camera preview */}
+        
         <div className="qr-camera-preview" style={{ border: `2px solid ${wsConnected ? 'var(--success)' : connected ? 'var(--warning)' : 'var(--border)'}` }}>
           <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
 
-        {/* Status */}
+        
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
           <span className={`badge ${wsConnected ? 'badge-success' : connected ? 'badge-warning' : 'badge-info'}`}>
             {wsConnected ? '🟢 Streaming Live' : connected ? '⏳ Connecting WS...' : '⏸ Not Started'}
@@ -162,3 +154,4 @@ export default function QRCameraPage() {
     </div>
   );
 }
+

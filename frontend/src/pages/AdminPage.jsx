@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Admin Page — View all student submissions + proctoring data
  */
 import React, { useState, useEffect } from 'react';
@@ -92,7 +92,7 @@ export default function AdminPage() {
 
   return (
     <div className="admin-page">
-      {/* Navbar */}
+      
       <nav className="navbar" style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100 }}>
         <div className="navbar-inner container">
           <span className="navbar-brand">🧠 MindMesh — Admin</span>
@@ -108,7 +108,7 @@ export default function AdminPage() {
       </nav>
 
       <div className="container">
-        {/* Header */}
+        
         <div className="admin-header">
           <h1>🛡️ Proctoring Dashboard</h1>
           <p>Exam results and AI proctoring reports for all students</p>
@@ -159,7 +159,7 @@ export default function AdminPage() {
           )}
         </div>
 
-        {/* Summary Stats */}
+        
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
           {[
             { val: stats.total, lbl: 'Total Submissions', icon: '📋', color: 'var(--accent)' },
@@ -175,7 +175,7 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {/* Search */}
+        
         <div style={{ marginBottom: 16 }}>
           <input
             className="form-input"
@@ -186,7 +186,7 @@ export default function AdminPage() {
           />
         </div>
 
-        {/* Table */}
+        
         {loading ? (
           <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>⏳ Loading submissions...</div>
         ) : filtered.length === 0 ? (
@@ -239,14 +239,14 @@ export default function AdminPage() {
                         </td>
                       </tr>
 
-                      {/* Detail row */}
+                      
                       {isOpen && (
                         <tr key={`${sub.submission_id}-detail`}>
                           <td colSpan={8} style={{ padding: 0 }}>
                             <div className="detail-panel">
                               <h4 style={{ marginBottom: 16, color: 'var(--accent)' }}>🔍 Proctoring Report — {sub.student_name}</h4>
 
-                              {/* Summary stats */}
+                              
                               <div className="detail-grid">
                                 {[
                                   { val: `${sub.score}%`, lbl: 'Final Score', color: gradeColor(sub.score) },
@@ -263,7 +263,7 @@ export default function AdminPage() {
                                 ))}
                               </div>
 
-                              {/* AI Supervisor Analysis */}
+                              
                               {sub.ai_supervisor && (
                                 <div className="glass-card" style={{ padding: 16, marginBottom: 16, background: 'rgba(255,255,255,0.02)', borderLeft: `4px solid ${riskColor(sub.ai_supervisor.probability_cheating)}` }}>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -285,7 +285,7 @@ export default function AdminPage() {
                                 </div>
                               )}
 
-                              {/* Category breakdown */}
+                              
                               {sub.category_scores && (
                                 <div style={{ marginBottom: 16 }}>
                                   <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>📈 Category Performance</p>
@@ -308,7 +308,7 @@ export default function AdminPage() {
                                 </div>
                               )}
 
-                              {/* Violation types */}
+                              
                               {sub.proctoring_summary?.violation_types?.length > 0 && (
                                 <div>
                                   <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>🚨 Detected Violations</p>
@@ -334,3 +334,4 @@ export default function AdminPage() {
     </div>
   );
 }
+
