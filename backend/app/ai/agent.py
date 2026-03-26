@@ -2,8 +2,8 @@ import os
 import json
 import requests
 
-_ALLOWED_PROBABILITIES = {"High", "Medium", "Low", "None"}
-_ALLOWED_ACTIONS = {"Pass", "Review Timeline", "Invalidate Exam"}
+_ALLOWED_PROBABILITIES = frozenset({"High", "Medium", "Low", "None"})
+_ALLOWED_ACTIONS = frozenset({"Pass", "Review Timeline", "Invalidate Exam"})
 
 
 def _normalize_supervisor_report(raw: dict) -> dict:
@@ -13,7 +13,7 @@ def _normalize_supervisor_report(raw: dict) -> dict:
 
     reasoning = raw.get("reasoning", "")
     if not isinstance(reasoning, str) or not reasoning.strip():
-        reasoning = "No explainable reasoning was generated. Please review timeline manually."
+        reasoning = "No explanation was generated. Please review timeline manually."
     else:
         reasoning = reasoning.strip()
 
