@@ -74,8 +74,19 @@ Start-Process mongod -ArgumentList "--dbpath `"$PWD\data\db`" --port 27017" -Win
 ```powershell
 cd backend
 python -m venv venv
-.\venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+```
+
+If PowerShell blocks activation scripts, use a temporary policy in the current terminal:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\venv\Scripts\Activate.ps1
+```
+
+You can also skip activation and run tools directly via the venv interpreter:
+```powershell
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 Create backend/.env:
@@ -106,8 +117,22 @@ npm install --legacy-peer-deps
 ### Backend
 ```powershell
 cd backend
-.\venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 uvicorn app.main:app --reload --port 8000
+```
+
+Activation-free backend run (recommended when script policy is restricted):
+```powershell
+cd backend
+.\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+```
+
+If port 8000 is already in use (WinError 10013), either stop the existing process or use another port:
+```powershell
+Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -eq 8000 }
+Stop-Process -Id <PID> -Force
+# or
+.\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8001
 ```
 
 ### Frontend
