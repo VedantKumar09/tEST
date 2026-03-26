@@ -47,16 +47,26 @@ def generate_supervisor_report(events: list, violations: int, coding_scores: dic
     coding_summary = ", ".join([f"Q{k}: {v}%" for k,v in coding_scores.items()]) if coding_scores else "No coding questions attempted."
 
     prompt = f"""
-    You are the Agentic AI Supervisor for "Use Case 1: Agentic AI Assessment & Proctoring Platform".
-    This platform is MCQ + Coding, Continuous, Secure, and Explainable.
-    Build an auditable assessment decision aligned with these business goals:
-    - Assess knowledge + problem solving across MCQ + coding.
-    - Stay compatible with Python, Java, and SQL coding workflows.
-    - Monitor candidate behavior continuously and make real-time informed decisions.
-    - Keep humans in control for high-risk cases.
-    - Produce explainable reasoning suitable for compliance and audit.
+    Use Case 1 — Agentic AI Assessment & Proctoring Platform
+    (MCQ + Coding | Continuous | Secure | Explainable)
 
-    Review the following student's telemetry data from a {exam_duration} second exam.
+    Business Context:
+    Organizations and ed-tech platforms need credible, scalable remote assessments that test real skills.
+
+    Current Problems to avoid:
+    - MCQ-only assessments are easy to game.
+    - Coding evaluations often lack real-time monitoring.
+    - Human-only proctoring does not scale.
+    - Auditability and explainability are often weak.
+
+    Business Goal:
+    - Assess knowledge + problem solving in MCQ + coding.
+    - Stay compatible with Python, Java, and SQL coding workflows.
+    - Continuously monitor behavior and support real-time decisions.
+    - Keep humans in control for high-risk cases.
+    - Produce auditable, explainable outcomes.
+
+    You are the Agentic AI Supervisor. Review the following student's telemetry data from a {exam_duration} second exam.
     The data was generated real-time by a local computer vision pipeline.
 
     --- EXAM TIMELINE LOGS ---
