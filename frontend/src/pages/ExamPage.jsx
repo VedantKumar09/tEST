@@ -28,6 +28,31 @@ const FALLBACK_QUESTIONS = [
 const EXAM_DURATION = 600; // 10 minutes
 const ANALYSIS_INTERVAL_MS = 2000; // send frame every 2000ms for stable detection
 
+const VIOLATION_POINTS = {
+  no_face: 2,
+  looking_away: 1,
+  gaze_offscreen: 1,
+  multiple_faces: 5,
+  object: 10,
+  tab_switch: 3,
+  fullscreen_exit: 2,
+  copy_paste: 3,
+  right_click: 1,
+};
+
+function pointsForViolation(type) {
+  if (!type) return 0;
+  if (type.startsWith('object:')) return VIOLATION_POINTS.object;
+  return VIOLATION_POINTS[type] ?? 0;
+}
+
+function riskFromScore(score) {
+  if (score <= 5) return 'Safe';
+  if (score <= 10) return 'Suspicious';
+  if (score <= 20) return 'High Risk';
+  return 'Cheating';
+}
+
 export default function ExamPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -312,11 +337,8 @@ export default function ExamPage() {
   const sendBrowserEvent = useCallback(async (eventType) => {
     if (!user?.email) return;
     try {
-      const res = await proctoringAPI.sendBrowserEvent(user.email, eventType);
-      if (res.score) {
-        setRiskScore(res.score.cumulative_score || 0);
-        setRiskLevel(res.score.risk_level || 'Safe');
-      }
+      // Keep backend logs/scores for audit, but avoid overriding local UI risk model.
+      await proctoringAPI.sendBrowserEvent(user.email, eventType);
     } catch {}
   }, [user]);
 
@@ -533,11 +555,12 @@ export default function ExamPage() {
     violationTypesRef.current.push(type);
     setViolations(prev => {
       const next = prev + 1;
-      
-      // Compute Risk Logic locally (since WASM replaced Backend AI)
-      const newScore = Math.min(100, next * 15);
-      setRiskScore(newScore);
-      setRiskLevel(newScore >= 60 ? 'High' : newScore >= 30 ? 'Medium' : 'Low');
+
+      setRiskScore(prevScore => {
+        const nextScore = Math.min(100, prevScore + pointsForViolation(type));
+        setRiskLevel(riskFromScore(nextScore));
+        return nextScore;
+      });
 
       if (next === 5) setShowWarning(true);
       if (next === 8) { setShowWarning(false); setShowPause(true); }
@@ -602,7 +625,13 @@ export default function ExamPage() {
   const selectedCodingLanguage = q?.type === 'coding' ? (activeLanguage[q.id] ?? q.language ?? 'python') : 'python';
 
   // Risk level colour
-  const riskColor = riskLevel === 'Cheating' ? 'var(--danger)' : riskLevel === 'High Risk' ? '#ff6b35' : riskLevel === 'Suspicious' ? 'var(--warning)' : 'var(--success)';
+  const riskColor = riskLevel === 'Cheating'
+    ? 'var(--danger)'
+    : riskLevel === 'High Risk'
+      ? '#ff6b35'
+      : riskLevel === 'Suspicious'
+        ? 'var(--warning)'
+        : 'var(--success)';
   // Attention colour
   const attColor = attentionStatus === 'Away' ? 'var(--danger)' : attentionStatus === 'Distracted' ? 'var(--warning)' : 'var(--success)';
   const attIcon = attentionStatus === 'Focused' ? '🎯' : attentionStatus === 'Distracted' ? '👀' : '🚫';
