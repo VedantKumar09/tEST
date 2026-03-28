@@ -1,13 +1,14 @@
-﻿import os
+import os
 import json
 import time
 import requests
 from ..config import settings
+from .scoring import get_score
 COOLDOWN_SECONDS = 20   # minimum gap between API calls
 LAST_CALL_TIME = 0
 
 PROVIDER = (settings.AI_PROVIDER or "groq").strip().lower()
-def _build_supervisor_prompt(events, violations, coding_scores, exam_duration):
+def _build_supervisor_prompt(events, violations, coding_scores, exam_duration, risk_level="Safe"):
 
     # compress logs instead of full timeline
     event_counts = {}
@@ -15,21 +16,28 @@ def _build_supervisor_prompt(events, violations, coding_scores, exam_duration):
         t = e.get("type", "unknown")
         event_counts[t] = event_counts.get(t, 0) + 1
 
-    log_summary = ", ".join([f"{k}: {v}" for k, v in event_counts.items()])
+    log_summary = ", ".join([f"{k}: {v}" for k, v in event_counts.items()]) or "No events"
     coding_summary = ", ".join([f"Q{k}: {v}%" for k, v in coding_scores.items()]) if coding_scores else "None"
 
     return f"""
-You are an AI Exam Supervisor.
+You are an AI Exam Supervisor reviewing proctoring data.
 
-Summary:
-Duration: {exam_duration}s
-Violations: {violations}
-Events: {log_summary}
-Coding: {coding_summary}
+Exam Summary:
+- Duration: {exam_duration}s
+- Total AI Violations Detected: {violations}
+- System Risk Level: {risk_level}
+- Events: {log_summary}
+- Coding Scores: {coding_summary}
 
-Decide cheating probability and action.
+Severity Guidelines (you MUST follow these):
+- 0-2 violations → probability_cheating should be "None" or "Low", recommended_action should be "Pass"
+- 3-5 violations → probability_cheating should be "Low" or "Medium", recommended_action should be "Pass" or "Review Timeline"
+- 6-10 violations → probability_cheating should be "Medium" or "High", recommended_action should be "Review Timeline"
+- 10+ violations → probability_cheating should be "High", recommended_action should be "Review Timeline" or "Invalidate Exam"
 
-Return ONLY JSON:
+IMPORTANT: Do NOT escalate beyond what the violation count warrants. A single violation is normal and should NOT be flagged as High or result in exam invalidation. Short exam duration alone is NOT evidence of cheating.
+
+Return ONLY valid JSON:
 {{
 "probability_cheating": "High" | "Medium" | "Low" | "None",
 "reasoning": "short reasoning",
@@ -109,7 +117,7 @@ def _run_groq(prompt):
         return _parse_json_text(text)
 
     raise RuntimeError("Groq rate limit exceeded")
-def generate_supervisor_report(events, violations, coding_scores, exam_duration, exam_finished=False):
+def generate_supervisor_report(events, violations, coding_scores, exam_duration, exam_finished=False, student_id=None):
     global LAST_CALL_TIME
     if not exam_finished and violations < 3:
         return {
@@ -126,9 +134,26 @@ def generate_supervisor_report(events, violations, coding_scores, exam_duration,
 
     LAST_CALL_TIME = time.time()
 
-    prompt = _build_supervisor_prompt(events, violations, coding_scores, exam_duration)
+    # Get the system's computed risk level to pass to the AI
+    risk_level = "Safe"
+    if student_id:
+        score_data = get_score(student_id)
+        risk_level = score_data.get("risk_level", "Safe")
+
+    # Derive risk level from violation count if student_id not available
+    if risk_level == "Safe" and violations > 0:
+        if violations <= 2:
+            risk_level = "Safe"
+        elif violations <= 5:
+            risk_level = "Suspicious"
+        elif violations <= 10:
+            risk_level = "High Risk"
+        else:
+            risk_level = "Cheating"
+
+    prompt = _build_supervisor_prompt(events, violations, coding_scores, exam_duration, risk_level)
     try:
-        if PROVIDER == "groq":
+        if PROVIDER in ("groq", "auto"):
             try:
                 result = _run_groq(prompt)
             except Exception as groq_error:
@@ -136,7 +161,7 @@ def generate_supervisor_report(events, violations, coding_scores, exam_duration,
         elif PROVIDER == "gemini":
             result = _run_gemini(prompt)
         else:
-            raise RuntimeError("Unsupported provider configured")
+            raise RuntimeError(f"Unsupported provider: {PROVIDER}")
 
         return {
             "probability_cheating": result.get("probability_cheating", "Unknown"),
