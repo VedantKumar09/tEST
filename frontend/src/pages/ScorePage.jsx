@@ -29,8 +29,8 @@ export default function ScorePage() {
   };
 
   const riskLabel = (violations) => {
-    if (violations >= 5) return { text: 'High', cls: 'badge-danger' };
-    if (violations >= 2) return { text: 'Medium', cls: 'badge-warning' };
+    if (violations >= 10) return { text: 'High', cls: 'badge-danger' };
+    if (violations >= 5) return { text: 'Medium', cls: 'badge-warning' };
     return { text: 'Low', cls: 'badge-success' };
   };
 

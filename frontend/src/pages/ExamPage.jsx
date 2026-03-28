@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
@@ -29,15 +29,15 @@ const EXAM_DURATION = 600; // 10 minutes
 const ANALYSIS_INTERVAL_MS = 2000; // send frame every 2000ms for stable detection
 
 const VIOLATION_POINTS = {
-  no_face: 2,
+  no_face: 1,
   looking_away: 1,
   gaze_offscreen: 1,
-  multiple_faces: 5,
-  object: 10,
-  tab_switch: 3,
-  fullscreen_exit: 2,
-  copy_paste: 3,
-  right_click: 1,
+  multiple_faces: 3,
+  object: 5,
+  tab_switch: 2,
+  fullscreen_exit: 1,
+  copy_paste: 1,
+  right_click: 0,
 };
 
 function pointsForViolation(type) {
@@ -47,9 +47,9 @@ function pointsForViolation(type) {
 }
 
 function riskFromScore(score) {
-  if (score <= 5) return 'Safe';
-  if (score <= 10) return 'Suspicious';
-  if (score <= 20) return 'High Risk';
+  if (score <= 10) return 'Safe';
+  if (score <= 20) return 'Suspicious';
+  if (score <= 35) return 'High Risk';
   return 'Cheating';
 }
 
@@ -459,19 +459,19 @@ export default function ExamPage() {
                
                const now = performance.now();
                // Warning banners + violation logging
-               if (geom.no_face && now - lastViolationTimeRef.current.no_face > 3000) {
+               if (geom.no_face && now - lastViolationTimeRef.current.no_face > 5000) {
                  lastViolationTimeRef.current.no_face = now;
                  addViolation('no_face');
                  logEvent('danger', 'No face detected!');
                  showWarningBanner('⚠ Face not detected');
                }
-               if (geom.multiple_faces && now - lastViolationTimeRef.current.multiple_faces > 3000) {
+               if (geom.multiple_faces && now - lastViolationTimeRef.current.multiple_faces > 5000) {
                  lastViolationTimeRef.current.multiple_faces = now;
                  addViolation('multiple_faces');
                  logEvent('danger', 'Multiple faces detected!');
                  showWarningBanner('⚠ Multiple people detected');
                }
-               if (geom.head_pose?.looking_away && now - lastViolationTimeRef.current.looking_away > 3000) {
+               if (geom.head_pose?.looking_away && now - lastViolationTimeRef.current.looking_away > 5000) {
                  lastViolationTimeRef.current.looking_away = now;
                  addViolation('looking_away');
                  logEvent('warning', 'Looking away from screen');
@@ -492,9 +492,9 @@ export default function ExamPage() {
                  
                  // Debug trace: console.log(`Detected: ${cls} - ${Math.round(conf * 100)}%`);
                  
-                 const suspiciousCats = ['cell phone', 'book', 'laptop', 'tablet', 'remote', 'telephone', 'tv'];
-                 if (suspiciousCats.includes(cls) && conf > 0.30) {
-                    if (nowTime - lastViolationTimeRef.current.object > 5000) {
+                 const suspiciousCats = ['cell phone', 'tablet', 'remote', 'telephone'];
+                 if (suspiciousCats.includes(cls) && conf > 0.45) {
+                    if (nowTime - lastViolationTimeRef.current.object > 6000) {
                       lastViolationTimeRef.current.object = nowTime;
                       
                       const alias = (cls === 'book' || cls === 'laptop') ? cls : 'Unauthorized Device';
@@ -562,9 +562,9 @@ export default function ExamPage() {
         return nextScore;
       });
 
-      if (next === 5) setShowWarning(true);
-      if (next === 8) { setShowWarning(false); setShowPause(true); }
-      if (next >= 12) { setShowPause(false); handleSubmit(true); }
+      if (next === 10) setShowWarning(true);
+      if (next === 15) { setShowWarning(false); setShowPause(true); }
+      if (next >= 20) { setShowPause(false); handleSubmit(true); }
       return next;
     });
   }

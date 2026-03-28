@@ -33,11 +33,14 @@ WEIGHTS = {
 
 
 def _risk_level(score: int) -> str:
-    if score <= 5:
+    """Risk levels aligned with industry standards (HackerRank/CodeSignal).
+    Minor events alone should never escalate beyond 'Safe'.
+    Only sustained patterns of major violations should reach 'Cheating'."""
+    if score <= 10:
         return "Safe"
-    elif score <= 10:
-        return "Suspicious"
     elif score <= 20:
+        return "Suspicious"
+    elif score <= 35:
         return "High Risk"
     else:
         return "Cheating"

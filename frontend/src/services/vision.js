@@ -26,28 +26,28 @@ export const initVision = async () => {
       baseOptions: faceBaseOptions,
       runningMode: "VIDEO",
       numFaces: 2,
-      minFaceDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
+      minFaceDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.6
     });
 
     objectDetector = await ObjectDetector.createFromOptions(vision, {
       baseOptions: objectBaseOptions,
       runningMode: "VIDEO",
-      scoreThreshold: 0.25
+      scoreThreshold: 0.40
     });
   } catch {
     faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
       baseOptions: { ...faceBaseOptions, delegate: "CPU" },
       runningMode: "VIDEO",
       numFaces: 2,
-      minFaceDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
+      minFaceDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.6
     });
 
     objectDetector = await ObjectDetector.createFromOptions(vision, {
       baseOptions: { ...objectBaseOptions, delegate: "CPU" },
       runningMode: "VIDEO",
-      scoreThreshold: 0.25
+      scoreThreshold: 0.40
     });
   }
 
@@ -59,6 +59,7 @@ const SMOOTH_WINDOW = 15;
 const history = {
   yaw: [], pitch: [], gaze: []
 };
+let multiFaceConsecutive = 0;
 
 const getAvg = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 
@@ -146,11 +147,19 @@ export const analyzeFaceGeometry = (landmarks, imgW, imgH) => {
     looking_offscreen = direction !== "center";
   }
 
+  // Require multiple consecutive frames to confirm multiple faces (reduces false positives)
+  if (faceCount > 1) {
+    multiFaceConsecutive++;
+  } else {
+    multiFaceConsecutive = 0;
+  }
+  const confirmedMultipleFaces = multiFaceConsecutive >= 3;
+
   return {
     face_detected: true,
     face_count: faceCount,
     no_face: false,
-    multiple_faces: faceCount > 1,
+    multiple_faces: confirmedMultipleFaces,
     head_pose: { yaw: parseFloat(yaw.toFixed(1)), pitch: parseFloat(pitch.toFixed(1)), looking_away },
     eye_gaze: { direction, ratio: parseFloat(avg_ratio.toFixed(3)), looking_offscreen }
   };

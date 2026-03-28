@@ -10,32 +10,45 @@ LAST_CALL_TIME = 0
 PROVIDER = (settings.AI_PROVIDER or "groq").strip().lower()
 def _build_supervisor_prompt(events, violations, coding_scores, exam_duration, risk_level="Safe"):
 
-    # compress logs instead of full timeline
+    # compress logs instead of full timeline, exclude 'danger'/'warning' tags
+    # as they are redundant with the violation count and bias the AI
     event_counts = {}
     for e in events:
         t = e.get("type", "unknown")
+        if t in ("danger", "warning"):
+            # Use the message content instead to get the actual event type
+            msg = e.get("msg", "").lower()
+            if "no face" in msg:
+                t = "no_face"
+            elif "multiple faces" in msg:
+                t = "multiple_faces"
+            elif "looking away" in msg:
+                t = "looking_away"
+            elif "tab switch" in msg or "focus lost" in msg:
+                t = "tab_switch"
+            elif "copy" in msg or "paste" in msg:
+                t = "copy_paste"
+            elif "right-click" in msg or "right click" in msg:
+                t = "right_click"
+            elif "object" in msg or "phone" in msg or "book" in msg:
+                t = "object_detected"
+            elif "fullscreen" in msg:
+                t = "fullscreen_exit"
+            else:
+                t = "other_event"
         event_counts[t] = event_counts.get(t, 0) + 1
 
     log_summary = ", ".join([f"{k}: {v}" for k, v in event_counts.items()]) or "No events"
     coding_summary = ", ".join([f"Q{k}: {v}%" for k, v in coding_scores.items()]) if coding_scores else "None"
 
     return f"""
-You are an AI Exam Supervisor reviewing proctoring data.
+You are an AI Exam Supervisor. Analyze the following proctoring data and decide the cheating probability and recommended action.
 
-Exam Summary:
-- Duration: {exam_duration}s
-- Total AI Violations Detected: {violations}
+Exam Data:
+- Total AI Violations: {violations}
 - System Risk Level: {risk_level}
 - Events: {log_summary}
 - Coding Scores: {coding_summary}
-
-Severity Guidelines (you MUST follow these):
-- 0-2 violations → probability_cheating should be "None" or "Low", recommended_action should be "Pass"
-- 3-5 violations → probability_cheating should be "Low" or "Medium", recommended_action should be "Pass" or "Review Timeline"
-- 6-10 violations → probability_cheating should be "Medium" or "High", recommended_action should be "Review Timeline"
-- 10+ violations → probability_cheating should be "High", recommended_action should be "Review Timeline" or "Invalidate Exam"
-
-IMPORTANT: Do NOT escalate beyond what the violation count warrants. A single violation is normal and should NOT be flagged as High or result in exam invalidation. Short exam duration alone is NOT evidence of cheating.
 
 Return ONLY valid JSON:
 {{
@@ -119,11 +132,15 @@ def _run_groq(prompt):
     raise RuntimeError("Groq rate limit exceeded")
 def generate_supervisor_report(events, violations, coding_scores, exam_duration, exam_finished=False, student_id=None):
     global LAST_CALL_TIME
-    if not exam_finished and violations < 3:
+
+    # Industry standard: don't even call the AI for minor violation counts
+    # HackerRank/CodeSignal only flag for review at 5+ violations
+    # This applies ALWAYS — even on final submission
+    if violations < 5:
         return {
-            "probability_cheating": "Low",
-            "reasoning": "Insufficient suspicious activity for AI review.",
-            "recommended_action": "Continue Monitoring"
+            "probability_cheating": "None",
+            "reasoning": "Violation count within normal range. No AI review needed.",
+            "recommended_action": "Pass"
         }
     if time.time() - LAST_CALL_TIME < COOLDOWN_SECONDS:
         return {
@@ -141,12 +158,13 @@ def generate_supervisor_report(events, violations, coding_scores, exam_duration,
         risk_level = score_data.get("risk_level", "Safe")
 
     # Derive risk level from violation count if student_id not available
+    # Aligned with industry: lenient thresholds
     if risk_level == "Safe" and violations > 0:
-        if violations <= 2:
+        if violations <= 5:
             risk_level = "Safe"
-        elif violations <= 5:
+        elif violations <= 8:
             risk_level = "Suspicious"
-        elif violations <= 10:
+        elif violations <= 15:
             risk_level = "High Risk"
         else:
             risk_level = "Cheating"
